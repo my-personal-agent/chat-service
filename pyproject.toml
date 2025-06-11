@@ -1,0 +1,54 @@
+[tool.poetry]
+name = "chat-service"
+version = "0.1.0"
+description = ""
+authors = ["Wai Yan Min Khaing <waiyanminkhaing1997@gmail.com>"]
+readme = "README.md"
+packages = [
+    { include = "config", from = "src" },
+    { include = "graph", from = "src" },
+    { include = "core", from = "src" },
+    { include = "enums", from = "src" },
+    { include = "middleware", from = "src" },
+    { include = "api", from = "src" },
+]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<4.0"
+python-json-logger = "^3.3.0"
+pyyaml = "^6.0.2"
+prometheus-client = "^0.22.1"
+psutil = "^7.0.0"
+langchain-mcp-adapters = "^0.1.7"
+langchain-ollama = "^0.3.3"
+langgraph = "^0.4.8"
+fastapi = "^0.115.12"
+async-lru = "^2.0.5"
+
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^4.2.0"
+black = "^25.1.0"
+ruff = "^0.11.13"
+mypy = "^1.16.0"
+pytest = "^8.4.0"
+pytest-asyncio = "^1.0.0"
+pytest-env = "^1.1.5"
+pytest-cov = "^6.1.1"
+
+[tool.pytest.ini_options]
+env = [
+    "ENV=local",
+]
+
+[tool.mypy]
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = ["src", "tests"]
+
+[tool.coverage.run]
+omit = ["*/__init__.py", "main.py"]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
