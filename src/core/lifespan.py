@@ -4,8 +4,9 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI
 
+from agents.supervisor_agent import get_supervisor_agent
+from agents.weather_agent import get_weather_agent
 from config.settings_config import get_settings
-from agent.agent import get_agent
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
     logger.info(f"Starting up {get_settings().project_info}...")
 
-    # Load agent
-    await get_agent()
+    # Load agents
+    await get_weather_agent()  # type: ignore
+    await get_supervisor_agent()  # type: ignore
 
     logger.info(f"{get_settings().project_info} completely loaded")
 

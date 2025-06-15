@@ -1,3 +1,6 @@
+from typing import List, Union
+
+
 def deep_merge(base: dict, override: dict) -> dict:
     """
     Recursively merges two dictionaries.
@@ -20,3 +23,23 @@ def deep_merge(base: dict, override: dict) -> dict:
             # Otherwise, override the base value
             base[key] = value
     return base
+
+
+Jsonable = Union[str, dict]
+InputType = Union[str, List[Jsonable]]
+
+
+def to_string(x: InputType) -> str:
+    if isinstance(x, str):
+        return x
+    elif isinstance(x, list):
+        parts = []
+        for item in x:
+            if isinstance(item, dict):
+                # serialize dict to JSON-like string
+                parts.append(str(item))
+            else:  # item is str
+                parts.append(item)
+        return " ".join(parts)
+    else:
+        raise TypeError(f"Unexpected type: {type(x)}")

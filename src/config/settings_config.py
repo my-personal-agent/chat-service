@@ -20,7 +20,9 @@ class Settings(BaseSettings):
     allowed_hosts: List[AnyHttpUrl]
 
     react_agent_model: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
-    final_agent_model: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
+    supervisor_agent_model: Annotated[
+        str, BeforeValidator(str.strip), Field(min_length=1)
+    ]
     ollama_base_url: AnyHttpUrl
 
     mcp_server_weather_url: AnyHttpUrl
