@@ -9,7 +9,7 @@ from langchain_core.messages.ai import AIMessageChunk
 from langchain_core.messages.tool import ToolMessage
 from sse_starlette import EventSourceResponse
 
-from core.prisma.generated.enums import Role
+from enums.chat_role import ChatRole
 from services.chat_service import (
     save_bot_messages,
     save_user_message,
@@ -17,6 +17,7 @@ from services.chat_service import (
 )
 
 logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
@@ -38,7 +39,7 @@ async def chat_stream(
                 {
                     "id": user_message.id,
                     "conversation_id": conversation.id,
-                    "role": Role.user.value,
+                    "role": ChatRole.USER.value,
                     "timestamp": datetime.now(timezone.utc).timestamp(),
                     "content": "",
                 }
@@ -69,8 +70,10 @@ async def chat_stream(
                         logger.info(token)
                         continue
 
+                    content = _merge_token_content(token)
+
                     # start thinking
-                    if token.content == "<think>":
+                    if content == "<think>":
                         if current is not None:
                             buffered_messages.append(current)
                             yield {
@@ -83,7 +86,7 @@ async def chat_stream(
                         current = {
                             "id": str(uuid4()),
                             "conversation_id": conversation.id,
-                            "role": Role.system.value,
+                            "role": ChatRole.SYSTEM.value,
                             "timestamp": datetime.now(timezone.utc).timestamp(),
                             "content": "",
                         }
@@ -91,7 +94,7 @@ async def chat_stream(
                         continue
 
                     # end thinking
-                    if token.content == "</think>":
+                    if content == "</think>":
                         is_thinking = False
                         yield {"event": "end_thinking", "data": json.dumps(current)}
                         if current:
@@ -102,18 +105,21 @@ async def chat_stream(
                     # thinking
                     if is_thinking and current:
                         current["timestamp"] = datetime.now(timezone.utc).timestamp()
-                        current["content"] += token.content
+                        current["content"] += content
                         yield {"event": "thinking", "data": json.dumps(current)}
                         continue
 
                     # bot message
                     if not is_thinking:
                         if current is None:
+                            if content.strip() == "":
+                                continue
+
                             current = {
                                 "id": str(uuid4()),
                                 "conversation_id": conversation.id,
-                                "role": Role.bot.value,
-                                "content": "",
+                                "role": ChatRole.BOT.value,
+                                "content": content,
                                 "timestamp": datetime.now(timezone.utc).timestamp(),
                             }
                             yield {
@@ -124,7 +130,7 @@ async def chat_stream(
                             current["timestamp"] = datetime.now(
                                 timezone.utc
                             ).timestamp()
-                            current["content"] += token.content
+                            current["content"] += content
                             yield {"event": "messaging", "data": json.dumps(current)}
 
                 elif isinstance(token, ToolMessage):
@@ -149,3 +155,10 @@ async def chat_stream(
         }
 
     return EventSourceResponse(event_generator())
+
+
+def _merge_token_content(token: AIMessageChunk):
+    if isinstance(token.content, list):
+        return "".join(str(item) for item in token.content)
+
+    return str(token.content)

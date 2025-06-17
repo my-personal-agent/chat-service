@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from core.prisma.db import get_db
-from core.prisma.generated.enums import Role
-from core.prisma.generated.models import Conversation, ConversationMessage
+from fastapi import HTTPException
+
+from db.prisma.generated.enums import Role
+from db.prisma.generated.models import Conversation, ConversationMessage
+from db.prisma.utils import get_db
 
 
 async def upsert_conversation(
@@ -12,11 +14,19 @@ async def upsert_conversation(
     db = await get_db()
 
     if conversation_id:
-        return await db.conversation.find_unique_or_raise(where={"id": conversation_id})
+        updated_conversation = await db.conversation.update(
+            where={"id": conversation_id},
+            data={"timestamp": datetime.now(timezone.utc).timestamp()},
+        )
+        if not updated_conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+
+        return updated_conversation
 
     return await db.conversation.create(
         data={
-            "title": "",
+            "title": "New Chat",
+            "timestamp": datetime.now(timezone.utc).timestamp(),
             "userId": user_id,
         },
     )
@@ -51,5 +61,25 @@ async def save_bot_messages(messages: list[dict]):
                 "timestamp": msg["timestamp"],
             }
             for msg in messages
+            if msg["content"].strip() != ""
         ]
     )
+
+
+async def get_messages_by_conversation_id(conversation_id: str):
+    # todo: add user id to condition
+    db = await get_db()
+    messages = await db.conversationmessage.find_many(
+        where={"conversationId": conversation_id}, order={"updatedAt": "desc"}
+    )
+
+    return [
+        {
+            "id": mes.id,
+            "content": mes.content,
+            "role": mes.role,
+            "timestamp": mes.timestamp,
+            "conversation_id": mes.conversationId,
+        }
+        for mes in messages
+    ]

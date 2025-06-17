@@ -10,7 +10,7 @@ from langgraph.store.postgres.base import PoolConfig
 from agents.embeddings import get_lang_store_embeddings
 from agents.supervisor_agent import build_supervisor_agent
 from config.settings_config import get_settings
-from core.prisma.db import get_db
+from db.prisma.utils import get_db
 
 logger = logging.getLogger(__name__)
 

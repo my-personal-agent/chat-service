@@ -1,7 +1,7 @@
 generator client {
     provider             = "prisma-client-py"
     recursive_type_depth = 5
-    output               = "../src/core/prisma/generated"
+    output               = "../src/db/prisma/generated"
 }
 
 datasource db {
@@ -22,8 +22,9 @@ model User {
 }
 
 model Conversation {
-    id    String @id @default(uuid())
-    title String
+    id        String @id @default(uuid())
+    title     String
+    timestamp Float
 
     User   User   @relation(fields: [userId], references: [id])
     userId String
@@ -40,7 +41,7 @@ model ConversationMessage {
     role      Role
     timestamp Float
 
-    Conversation   Conversation @relation(fields: [conversationId], references: [id])
+    conversation   Conversation @relation(fields: [conversationId], references: [id])
     conversationId String
 
     createdAt DateTime @default(now())

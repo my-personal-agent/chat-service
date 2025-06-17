@@ -10,6 +10,7 @@ packages = [
     { include = "core", from = "src" },
     { include = "enums", from = "src" },
     { include = "middleware", from = "src" },
+    { include = "db", from = "src" },
     { include = "api", from = "src" },
 ]
 

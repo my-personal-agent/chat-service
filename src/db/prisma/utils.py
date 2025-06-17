@@ -1,6 +1,6 @@
 from async_lru import alru_cache
 
-from core.prisma.generated.client import Prisma
+from db.prisma.generated.client import Prisma
 
 prisma = Prisma()
 

@@ -193,4 +193,4 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 .DS_Store
-src/core/prisma/generated/
+src/db/prisma/generated/
