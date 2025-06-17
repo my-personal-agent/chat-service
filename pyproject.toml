@@ -6,7 +6,7 @@ authors = ["Wai Yan Min Khaing <waiyanminkhaing1997@gmail.com>"]
 readme = "README.md"
 packages = [
     { include = "config", from = "src" },
-    { include = "graph", from = "src" },
+    { include = "agents", from = "src" },
     { include = "core", from = "src" },
     { include = "enums", from = "src" },
     { include = "middleware", from = "src" },
@@ -14,7 +14,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.10,<4.0"
+python = ">=3.11,<4.0"
 python-json-logger = "^3.3.0"
 pyyaml = "^6.0.2"
 prometheus-client = "^0.22.1"
@@ -25,6 +25,10 @@ langgraph = "^0.4.8"
 fastapi = "^0.115.12"
 async-lru = "^2.0.5"
 langgraph-supervisor = "^0.0.27"
+psycopg = {extras = ["binary", "pool"], version = "^3.2.9"}
+langmem = "^0.0.27"
+langgraph-checkpoint-postgres = "^2.0.21"
+prisma = "^0.15.0"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.2.0"
@@ -45,6 +49,7 @@ env = [
 namespace_packages = true
 explicit_package_bases = true
 mypy_path = ["src", "tests"]
+exclude = "^src/core/prisma/generated/"
 
 [tool.coverage.run]
 omit = ["*/__init__.py", "main.py"]

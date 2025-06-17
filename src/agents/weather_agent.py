@@ -26,7 +26,7 @@ async def get_weather_agent():
     tools = await mcp_client.get_tools()
 
     model = ChatOllama(
-        model=get_settings().react_agent_model,  # type: ignore
+        model=get_settings().weather_agent_model,  # type: ignore
         temperature=0,  # type: ignore
     )
 

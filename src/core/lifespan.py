@@ -3,10 +3,14 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.store.postgres import AsyncPostgresStore
+from langgraph.store.postgres.base import PoolConfig
 
-from agents.supervisor_agent import get_supervisor_agent
-from agents.weather_agent import get_weather_agent
+from agents.embeddings import get_lang_store_embeddings
+from agents.supervisor_agent import build_supervisor_agent
 from config.settings_config import get_settings
+from core.prisma.db import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -20,20 +24,45 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
     logger.info(f"Starting up {get_settings().project_info}...")
 
-    # Load agents
-    await get_weather_agent()  # type: ignore
-    await get_supervisor_agent()  # type: ignore
+    # load db
+    db = await get_db()
 
-    logger.info(f"{get_settings().project_info} completely loaded")
+    # embeddings
+    embeddings, dims = get_lang_store_embeddings()
 
-    app.state.ready = True
+    # load lang store and checkpointer
+    async with (
+        AsyncPostgresStore.from_conn_string(
+            get_settings().postgres_database_url,
+            pool_config=PoolConfig(
+                min_size=get_settings().postgres_pool_min_size,
+                max_size=get_settings().postgres_pool_max_size,
+            ),
+            index={"embed": embeddings, "dims": dims},
+        ) as store,
+        AsyncPostgresSaver.from_conn_string(
+            get_settings().postgres_database_url
+        ) as checkpointer,
+    ):
+        await store.setup()
+        await checkpointer.setup()
 
-    yield
+        # build agents
+        supervisor_agent = await build_supervisor_agent(store, checkpointer)  # type: ignore
+
+        # set data
+        app.state.supervisor_agent = supervisor_agent
+        app.state.ready = True
+
+        # log
+        logger.info(f"{get_settings().project_info} completely loaded")
+
+        yield
 
     # Shutdown
     logger.info(f"Shutting down {get_settings().project_info}...")
 
-    # Add cleanup tasks here
-    # Example: Close database connections, cleanup resources, etc.
+    # Add cleanup tasks
+    await db.disconnect()
 
     logger.info(f"{get_settings().project_info} completely shutdown")
