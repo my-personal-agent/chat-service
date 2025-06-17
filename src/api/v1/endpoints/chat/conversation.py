@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request
 from api.v1.schema.chat.conversation_message_response import ConversationMessageResponse
 from api.v1.schema.chat.conversation_response import ConversationResponse
 from db.prisma.utils import get_db
-from services.chat_service import get_messages_by_conversation_id
+from services.v1.chat_service import get_messages_by_conversation_id
 
 logger = logging.getLogger(__name__)
 

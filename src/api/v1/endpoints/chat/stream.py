@@ -10,7 +10,7 @@ from langchain_core.messages.tool import ToolMessage
 from sse_starlette import EventSourceResponse
 
 from enums.chat_role import ChatRole
-from services.chat_service import (
+from services.v1.chat_service import (
     save_bot_messages,
     save_user_message,
     upsert_conversation,
