@@ -11,11 +11,7 @@ from langchain_core.messages.tool import ToolMessage
 from config.settings_config import get_settings
 from core.redis_manager import get_redis
 from enums.chat_role import ChatRole
-from services.v1.chat_service import (
-    save_bot_messages,
-    save_user_message,
-    upsert_conversation,
-)
+from services.v1.chat_service import save_bot_messages, save_user_message, upsert_chat
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -55,18 +51,18 @@ async def websocket_chat(websocket: WebSocket):
 
             # 🟡 Resume connection (reconnect, page reload, etc.)
             if event_type == "resume":
-                conversation_id = data.get("conversation_id")
-                if not conversation_id:
+                chat_id = data.get("chat_id")
+                if not chat_id:
                     await websocket.send_json(
-                        {"type": "error", "message": "Missing conversation_id"}
+                        {"type": "error", "message": "Missing chat_id"}
                     )
                     continue
 
-                # Ensure conversation exists
-                _, conversation = await upsert_conversation(user_id, conversation_id)
+                # Ensure chat exists
+                _, chat = await upsert_chat(user_id, chat_id)
 
                 # Restore stream state from Redis
-                redis_key = f"in_progress:{conversation_id}"
+                redis_key = f"in_progress:{chat_id}"
                 raw_state = await redis_client.get(redis_key)
                 if raw_state:
                     stream_state = json.loads(raw_state)
@@ -82,38 +78,34 @@ async def websocket_chat(websocket: WebSocket):
                         }
                     )
 
-                await websocket.send_json(
-                    {"type": "resume_ack", "conversation_id": conversation_id}
-                )
+                await websocket.send_json({"type": "resume_ack", "chat_id": chat_id})
                 continue
 
             # 🔵 Incoming user message
             if event_type == "user_message":
-                conversation_id = data.get("conversation_id")
+                chat_id = data.get("chat_id")
                 message = data.get("message")
 
-                # Upsert conversation
-                is_created, conversation = await upsert_conversation(
-                    user_id, conversation_id
-                )
-                conversation_id = conversation.id
+                # Upsert chat
+                is_created, chat = await upsert_chat(user_id, chat_id)
+                chat_id = chat.id
 
                 if is_created:
                     await websocket.send_json(
                         {
                             "type": "create",
-                            "conversation_id": conversation_id,
+                            "chat_id": chat_id,
                             "timestamp": datetime.now(timezone.utc).timestamp(),
                         }
                     )
 
-                user_msg = await save_user_message(conversation_id, message)
+                user_msg = await save_user_message(chat_id, message)
 
                 await websocket.send_json(
                     {
                         "type": "init",
                         "id": user_msg.id,
-                        "conversation_id": conversation_id,
+                        "chat_id": chat_id,
                         "role": ChatRole.USER.value,
                         "timestamp": datetime.now(timezone.utc).timestamp(),
                         "content": user_msg.content,
@@ -127,7 +119,7 @@ async def websocket_chat(websocket: WebSocket):
                 config = {
                     "configurable": {
                         "thread_id": "thread_id",
-                        "conversation_id": conversation_id,
+                        "chat_id": chat_id,
                         "user_id": user_id,
                     }
                 }
@@ -159,7 +151,7 @@ async def websocket_chat(websocket: WebSocket):
                             thinking = True
                             current = {
                                 "id": str(uuid4()),
-                                "conversation_id": conversation_id,
+                                "chat_id": chat_id,
                                 "role": ChatRole.SYSTEM.value,
                                 "timestamp": datetime.now(timezone.utc).timestamp(),
                                 "content": "",
@@ -171,7 +163,7 @@ async def websocket_chat(websocket: WebSocket):
 
                             # Cache to Redis
                             await redis_client.setex(
-                                f"in_progress:{conversation_id}",
+                                f"in_progress:{chat_id}",
                                 get_settings().stream_cache_ttl,
                                 json.dumps({"current": current, "thinking": True}),
                             )
@@ -185,7 +177,7 @@ async def websocket_chat(websocket: WebSocket):
                                 )
                                 buffered.append(current)
                             current = None
-                            await redis_client.delete(f"in_progress:{conversation_id}")
+                            await redis_client.delete(f"in_progress:{chat_id}")
                             continue
 
                         if thinking and current:
@@ -197,7 +189,7 @@ async def websocket_chat(websocket: WebSocket):
 
                             # Cache to Redis
                             await redis_client.setex(
-                                f"in_progress:{conversation_id}",
+                                f"in_progress:{chat_id}",
                                 get_settings().stream_cache_ttl,
                                 json.dumps({"current": current, "thinking": True}),
                             )
@@ -210,7 +202,7 @@ async def websocket_chat(websocket: WebSocket):
                                     continue
                                 current = {
                                     "id": str(uuid4()),
-                                    "conversation_id": conversation_id,
+                                    "chat_id": chat_id,
                                     "role": ChatRole.BOT.value,
                                     "timestamp": datetime.now(timezone.utc).timestamp(),
                                     "content": content,
@@ -229,7 +221,7 @@ async def websocket_chat(websocket: WebSocket):
 
                             # Cache to Redis
                             await redis_client.setex(
-                                f"in_progress:{conversation_id}",
+                                f"in_progress:{chat_id}",
                                 get_settings().stream_cache_ttl,
                                 json.dumps({"current": current, "thinking": False}),
                             )
@@ -243,11 +235,9 @@ async def websocket_chat(websocket: WebSocket):
                     await websocket.send_json({**current, "type": "end_messaging"})
 
                 await save_bot_messages(buffered)
-                await redis_client.delete(f"in_progress:{conversation_id}")
+                await redis_client.delete(f"in_progress:{chat_id}")
 
-                await websocket.send_json(
-                    {"type": "complete", "conversation_id": conversation_id}
-                )
+                await websocket.send_json({"type": "complete", "chat_id": chat_id})
                 continue
 
             # 🔴 Stop streaming

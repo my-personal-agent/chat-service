@@ -6,15 +6,15 @@ from pydantic import BaseModel
 from enums.chat_role import ChatRole
 
 
-class ConversationMessage(BaseModel):
+class ChatsMessage(BaseModel):
     id: UUID
     content: str
     role: ChatRole
     timestamp: float
-    conversation_id: UUID
+    chat_id: UUID
 
 
-class ConversationMessageResponse(BaseModel):
+class ChatMessagesResponse(BaseModel):
     total: int
     nextCursor: Optional[str]
-    messages: list[ConversationMessage]
+    messages: list[ChatsMessage]
