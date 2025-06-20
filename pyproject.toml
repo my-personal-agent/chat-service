@@ -30,6 +30,8 @@ psycopg = {extras = ["binary", "pool"], version = "^3.2.9"}
 langmem = "^0.0.27"
 langgraph-checkpoint-postgres = "^2.0.21"
 prisma = "^0.15.0"
+uvicorn = {extras = ["standard"], version = "^0.34.3"}
+redis = "^6.2.0"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.2.0"

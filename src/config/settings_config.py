@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     ]
     lang_store_embeddings_model_dims: Annotated[int, Field(ge=0)]
 
+    # redis
+    redis_url: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
+    redis_max_connection: Annotated[int, Field(ge=0)]
+
+    # stream
+    stream_cache_ttl: Annotated[int, Field(ge=0)]
+
     class ConfigDict:
         env_file = ".env"
         env_file_encoding = "utf-8"

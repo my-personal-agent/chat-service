@@ -10,6 +10,7 @@ from langgraph.store.postgres.base import PoolConfig
 from agents.embeddings import get_lang_store_embeddings
 from agents.supervisor_agent import build_supervisor_agent
 from config.settings_config import get_settings
+from core.redis_manager import redis_manager
 from db.prisma.utils import get_db
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # load db
     db = await get_db()
+
+    # redis
+    await redis_manager.connect()
 
     # embeddings
     embeddings, dims = get_lang_store_embeddings()
@@ -64,5 +68,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Add cleanup tasks
     await db.disconnect()
+    await redis_manager.connect()
 
     logger.info(f"{get_settings().project_info} completely shutdown")

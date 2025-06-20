@@ -2,9 +2,5 @@ handlers:
   console:
     formatter: default
 
-loggers:
-  app:
-    level: DEBUG
-
 root:
   level: DEBUG

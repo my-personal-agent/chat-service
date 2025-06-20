@@ -1,11 +1,13 @@
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 
 from api.v1.schema.chat.conversation_message_response import ConversationMessageResponse
 from api.v1.schema.chat.conversation_response import ConversationResponse
-from db.prisma.utils import get_db
-from services.v1.chat_service import get_messages_by_conversation_id
+from services.v1.chat_service import (
+    get_conversation_list,
+    get_messages_by_conversation_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -13,14 +15,16 @@ router = APIRouter()
 
 
 @router.get(
-    "/conversations/{conversation_id}/messages",
-    response_model=list[ConversationMessageResponse],
+    "/chat/conversations/{conversation_id}/messages",
+    response_model=ConversationMessageResponse,
 )
 async def get_conversation_messages(
     request: Request,
     conversation_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    cursor: str = Query(None),
 ):
-    return await get_messages_by_conversation_id(conversation_id=conversation_id)
+    return await get_messages_by_conversation_id(conversation_id, limit, cursor)
 
 
 @router.get(
@@ -29,8 +33,8 @@ async def get_conversation_messages(
 )
 async def get_conversations(
     request: Request,
+    limit: int = Query(20, ge=1, le=100),
+    cursor: str = Query(None),
 ):
-    db = await get_db()
-
     # todo: add user id to condition
-    return await db.conversation.find_many(order={"updatedAt": "desc"})
+    return await get_conversation_list("user_id", limit, cursor)
