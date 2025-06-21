@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     ]
     weather_agent_model: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
 
+    # models
+    chat_title_model: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
+
     # mcp servers
     mcp_server_weather_url: AnyHttpUrl
     mcp_server_weather_transport: McpTransport

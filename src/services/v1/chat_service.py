@@ -8,6 +8,33 @@ from db.prisma.generated.models import Chat, ChatMessage
 from db.prisma.utils import get_db
 
 
+async def get_chat(user_id: str, chat_id: str) -> Chat:
+    db = await get_db()
+
+    chat = await db.chat.find_first(where={"id": chat_id, "userId": user_id})
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    return chat
+
+
+async def update_chat_title(user_id: str, chat_id: str, title: str):
+    db = await get_db()
+
+    updated_chat = await db.chat.update(
+        where={"id": chat_id},
+        data={
+            "title": title.strip(),
+            "timestamp": datetime.now(timezone.utc).timestamp(),
+            "isTitleSet": True,
+        },
+    )
+    if not updated_chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    return updated_chat
+
+
 async def upsert_chat(user_id: str, chat_id: Optional[str] = None) -> tuple[bool, Chat]:
     db = await get_db()
 
@@ -125,12 +152,12 @@ async def get_chat_list(user_id: str, limit: int, cursor: Optional[str] = None):
     return {
         "total": total,
         "nextCursor": next_cursor,
-        "messages": [
+        "chats": [
             {
-                "id": mes.id,
-                "title": mes.title,
-                "timestamp": mes.timestamp,
+                "id": chat.id,
+                "title": chat.title,
+                "timestamp": chat.timestamp,
             }
-            for mes in paginated_chats
+            for chat in paginated_chats
         ],
     }

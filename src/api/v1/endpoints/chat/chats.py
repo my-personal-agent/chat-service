@@ -26,11 +26,11 @@ async def get_chat_messages(
 
 @router.get(
     "/chats",
-    response_model=list[ChatsResponse],
+    response_model=ChatsResponse,
 )
 async def get_chats(
     request: Request,
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(30, ge=1, le=100),
     cursor: str = Query(None),
 ):
     # todo: add user id to condition

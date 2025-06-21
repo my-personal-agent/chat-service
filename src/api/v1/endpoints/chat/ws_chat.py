@@ -1,9 +1,12 @@
+import asyncio
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
 
+import ollama
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from langchain_core.messages.ai import AIMessageChunk
 from langchain_core.messages.tool import ToolMessage
@@ -11,7 +14,13 @@ from langchain_core.messages.tool import ToolMessage
 from config.settings_config import get_settings
 from core.redis_manager import get_redis
 from enums.chat_role import ChatRole
-from services.v1.chat_service import save_bot_messages, save_user_message, upsert_chat
+from services.v1.chat_service import (
+    get_chat,
+    save_bot_messages,
+    save_user_message,
+    update_chat_title,
+    upsert_chat,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -23,12 +32,59 @@ def _merge_token_content(token: AIMessageChunk) -> str:
     return str(token.content)
 
 
+def _is_greeting(message: str) -> bool:
+    prompt = f"""
+Determine whether the user's message is only a greeting (e.g. 'hi', 'hello', 'good morning', etc.).
+If yes, respond only with "yes". If not, respond only with "no".
+
+Message: "{message.strip()}"
+Answer:""".strip()
+
+    response = ollama.generate(model=get_settings().chat_title_model, prompt=prompt)
+    answer = (
+        re.sub(r"<think>.*?</think>", "", response["response"], flags=re.DOTALL)
+        .strip()
+        .lower()
+    )
+    logger.info(f"Is Greeting - Message: {message}, Answer: {answer}")
+    return answer.startswith("yes")
+
+
+def generate_title(buffered):
+    messages = [
+        {"role": buffer["role"], "content": buffer["content"]}
+        for buffer in buffered
+        if buffer["role"] in [ChatRole.USER, ChatRole.ASSISTANT]
+    ]
+
+    instruction = (
+        "Generate a short and relevant title (max 5 words) for the following conversation "
+        "between a user and an assistant. Respond with only the title.\n\n"
+    )
+
+    dialogue = "\n".join(
+        f"{msg['role'].capitalize()}: {msg['content'].strip()}" for msg in messages
+    )
+
+    prompt = f"{instruction}{dialogue}\n\nTitle:"
+
+    response = ollama.generate(
+        model=get_settings().chat_title_model,
+        prompt=prompt,
+    )
+    title = re.sub(
+        r"<think>.*?</think>", "", response["response"], flags=re.DOTALL
+    ).strip()
+
+    return title
+
+
 @router.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
     redis_client = await get_redis()
 
-    logger.info("🔌 WebSocket connected")
+    logger.info("🔌 Chat WebSocket connected")
 
     try:
         user_id = "user_id"  # TODO: replace with real authentication
@@ -59,10 +115,10 @@ async def websocket_chat(websocket: WebSocket):
                     continue
 
                 # Ensure chat exists
-                _, chat = await upsert_chat(user_id, chat_id)
+                chat = await get_chat(user_id, chat_id)
 
                 # Restore stream state from Redis
-                redis_key = f"in_progress:{chat_id}"
+                redis_key = f"chat_messages_in_progress:{chat_id}"
                 raw_state = await redis_client.get(redis_key)
                 if raw_state:
                     stream_state = json.loads(raw_state)
@@ -87,15 +143,24 @@ async def websocket_chat(websocket: WebSocket):
                 message = data.get("message")
 
                 # Upsert chat
-                is_created, chat = await upsert_chat(user_id, chat_id)
+                is_chat_created, chat = await upsert_chat(user_id, chat_id)
                 chat_id = chat.id
 
-                if is_created:
+                if is_chat_created:
                     await websocket.send_json(
                         {
-                            "type": "create",
+                            "type": "create_chat",
                             "chat_id": chat_id,
-                            "timestamp": datetime.now(timezone.utc).timestamp(),
+                            "content": chat.title,
+                            "timestamp": chat.timestamp,
+                        }
+                    )
+                else:
+                    await websocket.send_json(
+                        {
+                            "type": "update_chat",
+                            "chat_id": chat_id,
+                            "timestamp": chat.timestamp,
                         }
                     )
 
@@ -118,7 +183,7 @@ async def websocket_chat(websocket: WebSocket):
 
                 config = {
                     "configurable": {
-                        "thread_id": "thread_id",
+                        "thread_id": chat_id,
                         "chat_id": chat_id,
                         "user_id": user_id,
                     }
@@ -163,7 +228,7 @@ async def websocket_chat(websocket: WebSocket):
 
                             # Cache to Redis
                             await redis_client.setex(
-                                f"in_progress:{chat_id}",
+                                f"chat_messages_in_progress:{chat_id}",
                                 get_settings().stream_cache_ttl,
                                 json.dumps({"current": current, "thinking": True}),
                             )
@@ -177,7 +242,9 @@ async def websocket_chat(websocket: WebSocket):
                                 )
                                 buffered.append(current)
                             current = None
-                            await redis_client.delete(f"in_progress:{chat_id}")
+                            await redis_client.delete(
+                                f"chat_messages_in_progress:{chat_id}"
+                            )
                             continue
 
                         if thinking and current:
@@ -189,7 +256,7 @@ async def websocket_chat(websocket: WebSocket):
 
                             # Cache to Redis
                             await redis_client.setex(
-                                f"in_progress:{chat_id}",
+                                f"chat_messages_in_progress:{chat_id}",
                                 get_settings().stream_cache_ttl,
                                 json.dumps({"current": current, "thinking": True}),
                             )
@@ -203,7 +270,7 @@ async def websocket_chat(websocket: WebSocket):
                                 current = {
                                     "id": str(uuid4()),
                                     "chat_id": chat_id,
-                                    "role": ChatRole.BOT.value,
+                                    "role": ChatRole.ASSISTANT.value,
                                     "timestamp": datetime.now(timezone.utc).timestamp(),
                                     "content": content,
                                 }
@@ -221,7 +288,7 @@ async def websocket_chat(websocket: WebSocket):
 
                             # Cache to Redis
                             await redis_client.setex(
-                                f"in_progress:{chat_id}",
+                                f"chat_messages_in_progress:{chat_id}",
                                 get_settings().stream_cache_ttl,
                                 json.dumps({"current": current, "thinking": False}),
                             )
@@ -235,7 +302,35 @@ async def websocket_chat(websocket: WebSocket):
                     await websocket.send_json({**current, "type": "end_messaging"})
 
                 await save_bot_messages(buffered)
-                await redis_client.delete(f"in_progress:{chat_id}")
+                await redis_client.delete(f"chat_messages_in_progress:{chat_id}")
+
+                # generate title on chat create
+                if not chat.isTitleSet:
+                    await websocket.send_json(
+                        {"type": "checking_title", "chat_id": chat_id}
+                    )
+                    await asyncio.sleep(0)
+
+                    if _is_greeting(message):
+                        await websocket.send_json(
+                            {
+                                "type": "generated_title",
+                                "chat_id": chat_id,
+                                "content": chat.title,
+                                "timestamp": chat.timestamp,
+                            }
+                        )
+                    else:
+                        title = generate_title(buffered)
+                        updated_chat = await update_chat_title(user_id, chat_id, title)
+                        await websocket.send_json(
+                            {
+                                "type": "generated_title",
+                                "chat_id": chat_id,
+                                "content": updated_chat.title,
+                                "timestamp": updated_chat.timestamp,
+                            }
+                        )
 
                 await websocket.send_json({"type": "complete", "chat_id": chat_id})
                 continue
@@ -251,4 +346,4 @@ async def websocket_chat(websocket: WebSocket):
                 )
 
     except WebSocketDisconnect:
-        logger.info("❌ WebSocket disconnected")
+        logger.info("❌ Chat WebSocket disconnected")
