@@ -18,7 +18,7 @@ async def get_chat(user_id: str, chat_id: str) -> Chat:
     return chat
 
 
-async def update_chat_title(user_id: str, chat_id: str, title: str):
+async def update_chat_title(user_id: str, chat_id: str, title: str) -> Chat:
     db = await get_db()
 
     updated_chat = await db.chat.update(
@@ -70,7 +70,7 @@ async def save_user_message(chat_id: str, message: str) -> ChatMessage:
     )
 
 
-async def save_bot_messages(messages: list[dict]):
+async def save_bot_messages(messages: list[dict]) -> None:
     if not messages:
         return
 

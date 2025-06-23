@@ -25,9 +25,21 @@ class Settings(BaseSettings):
         str, BeforeValidator(str.strip), Field(min_length=1)
     ]
     weather_agent_model: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
+    user_profile_agent_model: Annotated[
+        str, BeforeValidator(str.strip), Field(min_length=1)
+    ]
+    code_agent_model: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
+    translator_agent_model: Annotated[
+        str, BeforeValidator(str.strip), Field(min_length=1)
+    ]
 
     # models
     chat_title_model: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
+    memory_summarizer_model: Annotated[
+        str, BeforeValidator(str.strip), Field(min_length=1)
+    ]
+    memory_summarizer_model_max_tokens: Annotated[int, Field(ge=0)]
+    memory_summarizer_max_tokens: Annotated[int, Field(ge=0)]
 
     # mcp servers
     mcp_server_weather_url: AnyHttpUrl

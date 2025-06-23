@@ -204,6 +204,9 @@ async def websocket_chat(websocket: WebSocket):
                     if isinstance(token, AIMessageChunk) and not token.tool_calls:
                         content = _merge_token_content(token)
 
+                        if len(token.tool_calls) > 0:
+                            logger.info(token)
+                            continue
                         # Thinking state
                         if content == "<think>":
                             if current:
