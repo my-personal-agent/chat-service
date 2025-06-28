@@ -17,7 +17,20 @@ model User {
     timezone  String
     language  String
 
-    chats Chat[]
+    connectors Connector[]
+    chats      Chat[]
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model Connector {
+    id             String        @id @default(uuid())
+    connector_id   String        @unique
+    connector_type ConnectorType
+
+    User   User   @relation(fields: [userId], references: [id])
+    userId String
 
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
@@ -55,4 +68,8 @@ enum Role {
     user
     assistant
     system
+}
+
+enum ConnectorType {
+    gmail
 }

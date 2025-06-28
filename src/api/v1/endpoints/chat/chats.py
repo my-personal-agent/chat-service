@@ -2,8 +2,7 @@ import logging
 
 from fastapi import APIRouter, Query, Request
 
-from api.v1.schema.chat.chat_messages_response import ChatMessagesResponse
-from api.v1.schema.chat.chats_response import ChatsResponse
+from api.v1.schema.chat import ChatMessagesResponse, ChatsResponse
 from services.v1.chat_service import get_chat_list, get_messages_by_chat_id
 
 logger = logging.getLogger(__name__)

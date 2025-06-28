@@ -3,9 +3,16 @@ from typing import Optional
 
 from fastapi import HTTPException
 
+from api.v1.schema.chat import (
+    ChatMessageResponse,
+    ChatMessagesResponse,
+    ChatResponse,
+    ChatsResponse,
+)
 from db.prisma.generated.enums import Role
 from db.prisma.generated.models import Chat, ChatMessage
 from db.prisma.utils import get_db
+from enums.chat_role import ChatRole
 
 
 async def get_chat(user_id: str, chat_id: str) -> Chat:
@@ -93,7 +100,7 @@ async def save_bot_messages(messages: list[dict]) -> None:
 
 async def get_messages_by_chat_id(
     chat_id: str, limit: int, cursor: Optional[str] = None
-):
+) -> ChatMessagesResponse:
     db = await get_db()
 
     total = await db.chatmessage.count(where={"chatId": chat_id})
@@ -113,23 +120,25 @@ async def get_messages_by_chat_id(
     next_cursor = messages[-1].id if has_next_page else None
     paginated_messages = messages[:limit]
 
-    return {
-        "total": total,
-        "nextCursor": next_cursor,
-        "messages": [
-            {
-                "id": mes.id,
-                "content": mes.content,
-                "role": mes.role,
-                "timestamp": mes.timestamp,
-                "chat_id": mes.chatId,
-            }
+    return ChatMessagesResponse(
+        total=total,
+        nextCursor=next_cursor,
+        messages=[
+            ChatMessageResponse(
+                id=mes.id,
+                content=mes.content,
+                role=ChatRole(mes.role),
+                timestamp=mes.timestamp,
+                chat_id=mes.chatId,
+            )
             for mes in paginated_messages
         ],
-    }
+    )
 
 
-async def get_chat_list(user_id: str, limit: int, cursor: Optional[str] = None):
+async def get_chat_list(
+    user_id: str, limit: int, cursor: Optional[str] = None
+) -> ChatsResponse:
     db = await get_db()
 
     total = await db.chat.count(where={"userId": user_id})
@@ -149,15 +158,15 @@ async def get_chat_list(user_id: str, limit: int, cursor: Optional[str] = None):
     next_cursor = chats[-1].id if has_next_page else None
     paginated_chats = chats[:limit]
 
-    return {
-        "total": total,
-        "nextCursor": next_cursor,
-        "chats": [
-            {
-                "id": chat.id,
-                "title": chat.title,
-                "timestamp": chat.timestamp,
-            }
+    return ChatsResponse(
+        total=total,
+        next_cursor=next_cursor,
+        chats=[
+            ChatResponse(
+                id=chat.id,
+                title=chat.title,
+                timestamp=chat.timestamp,
+            )
             for chat in paginated_chats
         ],
-    }
+    )

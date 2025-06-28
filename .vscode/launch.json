@@ -2,7 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Run Chat API",
+            "name": "Run Chat Service",
             "type": "debugpy",
             "request": "launch",
             "module": "uvicorn",

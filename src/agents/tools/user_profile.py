@@ -1,7 +1,7 @@
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from db.prisma.utils import get_db
+from services.v1.profile_service import get_profile_of_user, update_profile_of_user
 
 
 @tool
@@ -19,15 +19,7 @@ async def get_profile(config: RunnableConfig):
     if not user_id:
         raise KeyError("user_id is required to to get profile")
 
-    db = await get_db()
-
-    user = await db.user.find_first_or_raise(where={"id": user_id})
-
-    return {
-        "firstName": user.firstName,
-        "lastName": user.lastName,
-        "nickName": user.nickName,
-    }
+    return get_profile_of_user(user_id)
 
 
 @tool
@@ -36,7 +28,7 @@ async def update_profile(field: str, value: str, config: RunnableConfig) -> str:
     Update a user profile field.
 
     Args:
-        field: The field to update (firstName, lastName, or nickName)
+        field: The field to update (firstName, lastName, nickName, langauge, timezone)
         value: The new value for the field
 
     Returns:
@@ -47,15 +39,6 @@ async def update_profile(field: str, value: str, config: RunnableConfig) -> str:
     if not user_id:
         raise KeyError("user_id is required to to get profile")
 
-    db = await get_db()
-
-    # Ensure only allowed fields are updated and types match
-    allowed_fields = {"firstName", "lastName", "nickName"}
-    if field not in allowed_fields:
-        raise ValueError(
-            f"Cannot update field '{field}'. Allowed fields: {allowed_fields}"
-        )
-
-    await db.user.update(where={"id": user_id}, data={field: value})  # type: ignore
+    await update_profile_of_user(user_id, {field: value})
 
     return f"Updated {field} to '{value}'."
