@@ -48,6 +48,16 @@ env = [
     "ENV=local",
 ]
 
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.black]
+line-length = 88
+
 [tool.mypy]
 namespace_packages = true
 explicit_package_bases = true
