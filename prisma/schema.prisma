@@ -57,7 +57,7 @@ model ChatMessage {
     role      Role
     timestamp Float
 
-    chat   Chat   @relation(fields: [chatId], references: [id])
+    chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
     chatId String
 
     createdAt DateTime @default(now())

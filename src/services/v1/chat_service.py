@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 
 from api.v1.schema.chat import (
     ChatMessageResponse,
@@ -170,6 +170,14 @@ async def get_chat_list(
             for chat in paginated_chats
         ],
     )
+
+
+async def delete_chat_of_user(user_id: str, chat_id: str) -> None:
+    db = await get_db()
+
+    deleted = await db.chat.delete_many(where={"id": chat_id, "userId": user_id})
+    if deleted == 0:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Chat Not Found")
 
 
 async def get_connectors(user_id: str) -> List[Connector]:
