@@ -16,6 +16,8 @@ from core.redis_manager import get_redis
 from enums.chat_role import ChatRole
 from services.v1.chat_service import (
     get_chat,
+    get_connectors,
+    get_user_fullname,
     save_bot_messages,
     save_user_message,
     update_chat_title,
@@ -188,6 +190,18 @@ async def websocket_chat(websocket: WebSocket):
                         "user_id": user_id,
                     }
                 }
+
+                # get user fullname
+                user_fullname = await get_user_fullname(user_id)
+                if user_fullname:
+                    config["configurable"]["user_fullname"] = user_fullname
+
+                # get connectors
+                connectors = await get_connectors(user_id)
+                for connector in connectors:
+                    config["configurable"][
+                        f"{connector.connector_type}_user_id"
+                    ] = connector.connector_id
 
                 async for (
                     stream_mode,
