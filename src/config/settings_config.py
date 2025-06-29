@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     translator_agent_model: Annotated[
         str, BeforeValidator(str.strip), Field(min_length=1)
     ]
+    google_agent_model: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
 
     # models
     chat_title_model: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
@@ -44,6 +45,8 @@ class Settings(BaseSettings):
     # mcp servers
     mcp_server_weather_url: AnyHttpUrl
     mcp_server_weather_transport: McpTransport
+    mcp_server_google_url: AnyHttpUrl
+    mcp_server_google_transport: McpTransport
 
     # postgres
     postgres_database_url: Annotated[

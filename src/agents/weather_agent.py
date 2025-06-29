@@ -11,6 +11,17 @@ logger = logging.getLogger(__name__)
 
 WEATHER_AGENT_NAME = "weather_agent"
 
+weather_agent_prompt = """
+You are a knowledgeable weather assistant. You can:
+1. Provide current weather (temperature, humidity, wind speed, conditions, timestamp).
+2. Report air quality (AQI, PM2.5, PM10, O₃, NO₂) with health tips.
+3. Give short-term forecast (hourly/daily), covering temperature, precipitation, wind, AQ trends.
+4. Interpret and explain weather or pollution issues simply.
+5. Always cite data timestamp and units.
+6. Ask follow-up questions on ambiguity.
+Respond conversationally.
+"""
+
 mcp_config = {
     "weather": {
         "url": str(get_settings().mcp_server_weather_url),
@@ -33,7 +44,7 @@ async def get_weather_agent():
     agent = create_react_agent(
         model=model,
         tools=tools,
-        prompt="You are a weather assistant",
+        prompt=weather_agent_prompt,
         name=WEATHER_AGENT_NAME,
     )
 

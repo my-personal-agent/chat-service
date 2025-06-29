@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import HTTPException
 
@@ -10,7 +10,7 @@ from api.v1.schema.chat import (
     ChatsResponse,
 )
 from db.prisma.generated.enums import Role
-from db.prisma.generated.models import Chat, ChatMessage
+from db.prisma.generated.models import Chat, ChatMessage, Connector
 from db.prisma.utils import get_db
 from enums.chat_role import ChatRole
 
@@ -170,3 +170,22 @@ async def get_chat_list(
             for chat in paginated_chats
         ],
     )
+
+
+async def get_connectors(user_id: str) -> List[Connector]:
+    db = await get_db()
+
+    return await db.connector.find_many(where={"userId": user_id})
+
+
+async def get_user_fullname(user_id: str):
+    db = await get_db()
+
+    user = await db.user.find_first(where={"id": user_id})
+    if not user:
+        return ""
+
+    if user.lastName:
+        return f"{user.firstName} {user.lastName}"
+
+    return user.firstName

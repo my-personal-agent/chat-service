@@ -2,6 +2,7 @@ from langchain_ollama import ChatOllama
 from langgraph_supervisor import create_supervisor
 
 from agents.code_agent import get_code_agent
+from agents.google_agent import get_google_agent
 from agents.tools.common import calculator, get_current_time
 from agents.tools.memory import manage_supervisor_memory, search_supervisor_memory
 from agents.translator_agent import get_translator_agent
@@ -19,6 +20,7 @@ Your available tools:
 - 👤 `transfer_to_user_profile_agent`: Use for anything involving user profile—viewing or updating.
 - 💻 `transfer_to_code_agent`: Use for writing, reviewing, or explaining code.
 - 🌐 `transfer_to_translator_agent`: Use for any translation requests (e.g., “Translate this to French”).
+- ✉️ `transfer_to_google_agent`: Use for Gmail tasks like composing or sending emails.
 
 ⏱️ Delegation rules:
 1. Do **not** respond directly to the user.
@@ -32,6 +34,7 @@ async def build_supervisor_agent(store, checkpointer):
     user_profile_agent = await get_user_profile_agent()  # type: ignore
     code_agent = await get_code_agent()  # type: ignore
     translator_agent = await get_translator_agent()  # type: ignore
+    google_agent = await get_google_agent()  # type: ignore
 
     # model
     model = ChatOllama(
@@ -40,7 +43,13 @@ async def build_supervisor_agent(store, checkpointer):
     )
 
     supervisor = create_supervisor(
-        agents=[weather_agent, user_profile_agent, code_agent, translator_agent],
+        agents=[
+            weather_agent,
+            user_profile_agent,
+            code_agent,
+            translator_agent,
+            google_agent,
+        ],
         model=model,
         tools=[
             manage_supervisor_memory,
