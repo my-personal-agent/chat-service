@@ -64,8 +64,6 @@ def prompt(state: AgentState, config: RunnableConfig) -> list[AnyMessage]:
         email_sign=email_sign_section,
     ).strip()
 
-    print(system_prompt)
-
     return [{"role": "system", "content": system_prompt}] + state["messages"]  # type: ignore
 
 
@@ -93,6 +91,7 @@ async def get_google_agent():
         tools=tools,
         prompt=prompt,  # type: ignore
         name=GOOGLE_AGENT_NAME,
+        interrupt_before=["tools"],
     )
 
     return agent

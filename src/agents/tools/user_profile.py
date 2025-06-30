@@ -19,7 +19,7 @@ async def get_profile(config: RunnableConfig):
     if not user_id:
         raise KeyError("user_id is required to to get profile")
 
-    return get_profile_of_user(user_id)
+    return await get_profile_of_user(user_id)
 
 
 @tool

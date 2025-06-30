@@ -4,7 +4,6 @@ from langgraph_supervisor import create_supervisor
 from agents.code_agent import get_code_agent
 from agents.google_agent import get_google_agent
 from agents.tools.common import calculator, get_current_time
-from agents.tools.memory import manage_supervisor_memory, search_supervisor_memory
 from agents.translator_agent import get_translator_agent
 from agents.user_profile_agent import get_user_profile_agent
 from agents.weather_agent import get_weather_agent
@@ -52,8 +51,6 @@ async def build_supervisor_agent(store, checkpointer):
         ],
         model=model,
         tools=[
-            manage_supervisor_memory,
-            search_supervisor_memory,
             calculator,
             get_current_time,
         ],
