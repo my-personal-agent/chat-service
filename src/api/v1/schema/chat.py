@@ -27,5 +27,5 @@ class ChatMessageResponse(BaseModel):
 
 class ChatMessagesResponse(BaseModel):
     total: int
-    nextCursor: Optional[str]
+    next_cursor: Optional[str]
     messages: list[ChatMessageResponse]

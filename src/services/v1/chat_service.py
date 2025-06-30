@@ -122,7 +122,7 @@ async def get_messages_by_chat_id(
 
     return ChatMessagesResponse(
         total=total,
-        nextCursor=next_cursor,
+        next_cursor=next_cursor,
         messages=[
             ChatMessageResponse(
                 id=mes.id,
@@ -186,7 +186,7 @@ async def get_connectors(user_id: str) -> List[Connector]:
     return await db.connector.find_many(where={"userId": user_id})
 
 
-async def get_user_fullname(user_id: str):
+async def get_user_fullname(user_id: str) -> str:
     db = await get_db()
 
     user = await db.user.find_first(where={"id": user_id})
