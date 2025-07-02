@@ -1,18 +1,23 @@
+import json
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import HTTPException, status
 
 from api.v1.schema.chat import (
+    ChatMessage,
     ChatMessageResponse,
     ChatMessagesResponse,
     ChatResponse,
     ChatsResponse,
+    ConfirmationChatMessage,
 )
+from db.prisma.generated._fields import Json
 from db.prisma.generated.enums import Role
-from db.prisma.generated.models import Chat, ChatMessage, Connector
+from db.prisma.generated.models import Chat, Connector
+from db.prisma.generated.models import ChatMessage as PrismaChatMessage
 from db.prisma.utils import get_db
-from enums.chat_role import ChatRole
+from enums.chat import ChatRole
 
 
 async def get_chat(user_id: str, chat_id: str) -> Chat:
@@ -64,20 +69,32 @@ async def upsert_chat(user_id: str, chat_id: Optional[str] = None) -> tuple[bool
     )
 
 
-async def save_user_message(chat_id: str, message: str) -> ChatMessage:
+async def save_user_message(
+    chat_id: str, group_id: str, message: str
+) -> PrismaChatMessage:
     db = await get_db()
 
+    message = message.strip()
     return await db.chatmessage.create(
         data={
             "chatId": chat_id,
-            "content": message.strip(),
+            "content": Json(message),
             "role": Role.user,
+            "groupId": group_id,
             "timestamp": datetime.now(timezone.utc).timestamp(),
         }
     )
 
 
-async def save_bot_messages(messages: list[dict]) -> None:
+def _is_non_empty_content(content: str | ConfirmationChatMessage) -> bool:
+    if isinstance(content, str):
+        return content.strip() != ""
+    if isinstance(content, dict):
+        return json.dumps(content).strip() != "{}"
+    return False
+
+
+async def save_bot_messages(messages: list[ChatMessage]) -> None:
     if not messages:
         return
 
@@ -88,14 +105,37 @@ async def save_bot_messages(messages: list[dict]) -> None:
             {
                 "id": str(msg["id"]),
                 "chatId": msg["chat_id"],
-                "content": msg["content"].strip(),
-                "role": msg["role"],
+                "content": Json(msg["content"]),  # type: ignore
+                "role": Role(msg["role"]),
+                "groupId": msg["group_id"],
                 "timestamp": msg["timestamp"],
             }
             for msg in messages
-            if msg["content"].strip() != ""
+            if _is_non_empty_content(msg["content"])
         ]
     )
+
+
+async def update_confirmation_message_approve(
+    chat_id: str, group_id: str, msg_id: str, approve: bool
+) -> PrismaChatMessage:
+    db = await get_db()
+
+    message = await db.chatmessage.find_first(
+        where={"id": msg_id, "chatId": chat_id, "groupId": group_id}
+    )
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    updated = await db.chatmessage.update(
+        where={"id": msg_id},
+        data={"content": Json({**message.content, "approve": approve})},
+    )
+
+    if not updated:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    return updated
 
 
 async def get_messages_by_chat_id(

@@ -53,9 +53,11 @@ model Chat {
 
 model ChatMessage {
     id        String @id @default(uuid())
-    content   String
+    content   Json
     role      Role
     timestamp Float
+
+    groupId String
 
     chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
     chatId String
@@ -68,6 +70,7 @@ enum Role {
     user
     assistant
     system
+    confirmation
 }
 
 enum ConnectorType {

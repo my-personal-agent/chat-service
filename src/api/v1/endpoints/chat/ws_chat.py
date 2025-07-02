@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 @router.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
-    redis_client = await get_redis()
+    redis_client = get_redis()
 
     logger.info("🔌 Chat WebSocket connected")
 

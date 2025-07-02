@@ -50,10 +50,7 @@ async def build_supervisor_agent(store, checkpointer):
             google_agent,
         ],
         model=model,
-        tools=[
-            calculator,
-            get_current_time,
-        ],
+        tools=[calculator, get_current_time],
         supervisor_name=SUPERVISOE_NAME,
         prompt=supervisor_prompt,
         output_mode="full_history",

@@ -1,8 +1,8 @@
 import logging
+from functools import lru_cache
 from typing import Optional
 
 import redis.asyncio as redis
-from async_lru import alru_cache
 from fastapi import HTTPException
 from redis.asyncio import ConnectionPool
 
@@ -65,7 +65,7 @@ class RedisManager:
 redis_manager = RedisManager()
 
 
-@alru_cache()
-async def get_redis() -> redis.Redis:
+@lru_cache()
+def get_redis() -> redis.Redis:
     """FastAPI dependency to get Redis client"""
     return redis_manager.get_client()
