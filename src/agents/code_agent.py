@@ -10,9 +10,7 @@ logger = logging.getLogger(__name__)
 
 CODE_AGENT_NAME = "code_agent"
 
-code_agent_prompt = (
-    prompt
-) = """
+code_agent_prompt = """
 You are a diligent, expert-level code assistant named **CodeAgent**.
 Your job is to help the user by writing, reviewing, or explaining code.
 
@@ -36,7 +34,7 @@ Respond only with code or explanations—**do not call tools**.
 @alru_cache()
 async def get_code_agent():
     model = ChatOllama(
-        model=get_settings().weather_agent_model,  # type: ignore
+        model=get_settings().code_agent_model,  # type: ignore
         temperature=0,  # type: ignore
     )
 

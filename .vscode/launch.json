@@ -14,7 +14,7 @@
                 "--lifespan", "on"
             ],
             "console": "integratedTerminal",
-            "justMyCode": true,
+            "justMyCode": false,
             "env": {
                 "PYTHONPATH": "${workspaceFolder}/src:${workspaceFolder}",
                 "ENV": "local"

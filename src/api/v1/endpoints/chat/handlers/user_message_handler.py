@@ -10,9 +10,14 @@ from uuid import uuid4
 import ollama
 import redis.asyncio as redis
 from fastapi import WebSocket
-from langchain_core.messages.ai import AIMessageChunk
-from langchain_core.messages.tool import ToolMessage
-from langgraph.types import Command
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    ToolMessage,
+)
+from langgraph.types import StateSnapshot, StateUpdate
 
 from api.v1.schema.chat import (
     ChatMessage,
@@ -134,21 +139,19 @@ async def _get_config(chat_id: str, user_id: str) -> dict:
     return config
 
 
-def _generate_title(buffered: list[ChatMessage]) -> str:
-    messages = [
-        {"role": buffer["role"], "content": buffer["content"]}
-        for buffer in buffered
-        if buffer["role"] in [ChatRole.USER, ChatRole.ASSISTANT]
-    ]
-
+def _generate_title(message: str, last_message: ChatMessage) -> str:
     instruction = (
         "Generate a short and relevant title (max 5 words) for the following conversation "
         "between a user and an assistant. Respond with only the title.\n\n"
     )
 
-    dialogue = "\n".join(
-        f"{msg['role'].capitalize()}: {msg['content'].strip()}" for msg in messages
-    )
+    content = last_message["content"]
+    if isinstance(content, str):
+        content_str = content.strip()
+    else:
+        content_str = str(content)
+
+    dialogue = f"USER: {message} \n{last_message['role'].capitalize()}: {content_str}"
 
     prompt = f"{instruction}{dialogue}\n\nTitle:"
 
@@ -167,11 +170,11 @@ async def _generate_chat_title(
     websocket: WebSocket,
     user_id: str,
     chat: PrismaChat,
-    message: str,
-    buffered: list[ChatMessage],
+    message: Optional[str],
+    last_message: ChatMessage,
 ) -> None:
     # Generate title
-    if not chat.isTitleSet:
+    if not chat.isTitleSet and message is not None:
         stream_chat: StreamChat = {
             "type": StreamType.CHECKING_TITLE,
             "chat_id": chat.id,
@@ -180,23 +183,37 @@ async def _generate_chat_title(
         await asyncio.sleep(0)
 
         if _is_greeting(message):
-            stream_chat_title: StreamChatTitle = {
+            greeting_title: StreamChatTitle = {
                 "type": StreamType.GENERATED_TITLE,
                 "chat_id": chat.id,
                 "content": chat.title,
                 "timestamp": chat.timestamp,
             }
-            await websocket.send_json(stream_chat_title)
+            await websocket.send_json(greeting_title)
         else:
-            title = _generate_title(buffered)
+            title = _generate_title(message, last_message)
             updated_chat = await update_chat_title(user_id, chat.id, title)
-            stream_chat_title: StreamChatTitle = {
+            generated_title: StreamChatTitle = {
                 "type": StreamType.GENERATED_TITLE,
                 "chat_id": chat.id,
                 "content": updated_chat.title,
                 "timestamp": updated_chat.timestamp,
             }
-            await websocket.send_json(stream_chat_title)
+            await websocket.send_json(generated_title)
+
+
+async def _get_sub_graph_state(
+    websocket: WebSocket,
+    config: dict,
+) -> Union[None, StateSnapshot]:
+    state = await websocket.app.state.supervisor_agent.aget_state(
+        config, subgraphs=True
+    )
+
+    if hasattr(state, "tasks") and len(state.tasks) > 0:
+        return state.tasks[0].state
+
+    return None
 
 
 async def _is_completed(
@@ -206,83 +223,266 @@ async def _is_completed(
     chat: PrismaChat,
     group_id: str,
     buffered: list[ChatMessage],
+    user_msg: Optional[str] = None,
 ) -> bool:
-    state = await websocket.app.state.supervisor_agent.aget_state(
-        config, subgraphs=True
-    )
+    sub_state = await _get_sub_graph_state(websocket, config)
 
-    if hasattr(state, "tasks") and len(state.tasks) > 0:
-        sub_state = state.tasks[0].state
+    if sub_state is None:
+        return True
 
-        if sub_state.next and "tools" in sub_state.next:
-            last_message = sub_state.values["messages"][-1]
-            if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-                tool_call = last_message.tool_calls[0]
-                confirmation: ConfirmationChatMessage = {
-                    "name": tool_call.get("name"),
-                    "args": tool_call.get("args"),
-                    "approve": None,
-                }
-                current: ChatMessage = {
-                    "id": str(uuid4()),
-                    "chat_id": chat.id,
-                    "role": ChatRole.CONFIRMATION,
-                    "timestamp": datetime.now(timezone.utc).timestamp(),
-                    "content": confirmation,
-                    "group_id": group_id,
-                }
-                buffered.append(
-                    {
-                        **current,
-                        "content": {
-                            **confirmation,
-                            "approve": False,
-                        },
-                    }
-                )
-                stream_msg: StreamChatMessage = {
+    if sub_state.next and "tools" in sub_state.next:
+        last_message = sub_state.values["messages"][-1]
+        if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+            tool_call = last_message.tool_calls[0]
+            confirmation: ConfirmationChatMessage = {
+                "name": tool_call.get("name"),
+                "args": tool_call.get("args"),
+                "approve": None,
+            }
+            current: ChatMessage = {
+                "id": str(uuid4()),
+                "chat_id": chat.id,
+                "role": ChatRole.CONFIRMATION,
+                "timestamp": datetime.now(timezone.utc).timestamp(),
+                "content": confirmation,
+                "group_id": group_id,
+            }
+            buffered.append(
+                {
                     **current,
-                    "type": StreamType.CONFIRMATION,
+                    "content": {
+                        **confirmation,
+                        "approve": False,
+                    },
                 }
-                await websocket.send_json(stream_msg)
+            )
+            stream_msg: StreamChatMessage = {
+                **current,
+                "type": StreamType.CONFIRMATION,
+            }
+            await websocket.send_json(stream_msg)
 
-                await redis_client.setex(
-                    f"chat_messages_in_confirmation:{current['id']}",
-                    get_settings().stream_cache_ttl,
-                    json.dumps({"group_id": group_id}),
-                )
+            await redis_client.setex(
+                f"chat_messages_in_confirmation:{current['id']}",
+                get_settings().stream_cache_ttl,
+                json.dumps(
+                    {
+                        "group_id": group_id,
+                        "tool_call_id": tool_call.get("id"),
+                        "tool_call_name": tool_call.get("name"),
+                        "tool_call_args": tool_call.get("args"),
+                        "user_msg": user_msg,
+                    }
+                ),
+            )
 
-                return False
+            return False
 
     return True
 
 
-async def _stream_messages(
+async def _send_stream_messages(
     websocket: WebSocket,
     redis_client: redis.Redis,
     chat: PrismaChat,
     group_id: str,
-    message: Union[str, dict],
     config: dict,
-    msg_id: Optional[str] = None,
-) -> tuple[bool, list[ChatMessage]]:
-    buffered: list[ChatMessage] = []
+    message: Optional[BaseMessage] = None,
+    buffered: list[ChatMessage] = [],
+) -> None:
     current: Optional[ChatMessage] = None
     thinking = False
-    input = None
-    is_approved = False
 
-    if isinstance(message, dict):
+    async for stream_mode, chunk in websocket.app.state.supervisor_agent.astream(
+        {"messages": [message]} if message is not None else None,
+        stream_mode=["updates", "messages"],
+        config=config,
+    ):
+        if stream_mode != "messages" or not isinstance(chunk, tuple):
+            continue
+
+        token, _ = chunk
+        if isinstance(token, AIMessageChunk) and not token.tool_calls:
+            content = _merge_token_content(token)
+
+            if content == "<think>":
+                if current:
+                    end_msg: StreamChatMessage = {
+                        **current,
+                        "type": StreamType.END_MESSAGING,
+                    }
+                    await websocket.send_json(end_msg)
+                    buffered.append(current)
+                    current = None
+
+                thinking = True
+                current = {
+                    "id": str(uuid4()),
+                    "chat_id": chat.id,
+                    "role": ChatRole.SYSTEM,
+                    "timestamp": datetime.now(timezone.utc).timestamp(),
+                    "content": "",
+                    "group_id": group_id,
+                }
+                start_thinking_msg: StreamChatMessage = {
+                    **current,
+                    "type": StreamType.START_THINKING,
+                }
+                await websocket.send_json(start_thinking_msg)
+                await _cache_stream_to_redis(redis_client, chat.id, current, thinking)
+                continue
+
+            if content == "</think>":
+                thinking = False
+                if current:
+                    end_thinking_msg: StreamChatMessage = {
+                        **current,
+                        "type": StreamType.END_THINKING,
+                    }
+                    await websocket.send_json(end_thinking_msg)
+                    buffered.append(current)
+                current = None
+                await redis_client.delete(f"chat_messages_in_progress:{chat.id}")
+                continue
+
+            if thinking and current:
+                current["timestamp"] = datetime.now(timezone.utc).timestamp()
+                current["content"] = str(current["content"]) + content
+                thinking_msg: StreamChatMessage = {
+                    **current,
+                    "type": StreamType.THINKING,
+                }
+                await websocket.send_json(thinking_msg)
+                await _cache_stream_to_redis(redis_client, chat.id, current, thinking)
+                continue
+
+            if not thinking:
+                if current is None:
+                    if not content.strip():
+                        continue
+                    current = {
+                        "id": str(uuid4()),
+                        "chat_id": chat.id,
+                        "role": ChatRole.ASSISTANT,
+                        "timestamp": datetime.now(timezone.utc).timestamp(),
+                        "content": content,
+                        "group_id": group_id,
+                    }
+                    start_msg: StreamChatMessage = {
+                        **current,
+                        "type": StreamType.START_MESSAGING,
+                    }
+                    await websocket.send_json(start_msg)
+                else:
+                    current["timestamp"] = datetime.now(timezone.utc).timestamp()
+                    current["content"] = str(current["content"]) + content
+                    messaging_msg: StreamChatMessage = {
+                        **current,
+                        "type": StreamType.MESSAGING,
+                    }
+                    await websocket.send_json(messaging_msg)
+
+                await _cache_stream_to_redis(redis_client, chat.id, current, thinking)
+
+        elif isinstance(token, ToolMessage):
+            logger.info(token)
+
+    if current:
+        buffered.append(current)
+        final_msg: StreamChatMessage = {**current, "type": StreamType.END_MESSAGING}
+        await websocket.send_json(final_msg)
+        current = None
+
+
+async def _stream_user_messages(
+    websocket: WebSocket,
+    redis_client: redis.Redis,
+    chat: PrismaChat,
+    message: str,
+    config: dict,
+) -> tuple[bool, list[ChatMessage], str]:
+    group_id = str(uuid.uuid4())
+    await _handle_init_user_message(websocket, chat.id, group_id, message)
+
+    buffered: list[ChatMessage] = []
+    await _send_stream_messages(
+        websocket,
+        redis_client,
+        chat,
+        group_id,
+        config,
+        HumanMessage(content=message),
+        buffered,
+    )
+
+    is_completed = await _is_completed(
+        websocket, redis_client, config, chat, group_id, buffered, message
+    )
+
+    return is_completed, buffered, message
+
+
+async def _stream_confirm_messages(
+    websocket: WebSocket,
+    redis_client: redis.Redis,
+    chat: PrismaChat,
+    data: Any,
+    config: dict,
+) -> tuple[bool, list[ChatMessage], Optional[str]]:
+    group_id = None
+    user_msg = None
+    tool_call_id = None
+    tool_call_name = None
+    tool_call_args = None
+
+    msg_id: str = data.get("msg_id")
+    message: dict = data.get("message")
+
+    redis_key = f"chat_messages_in_confirmation:{msg_id}"
+    raw_state = await redis_client.get(redis_key)
+    if raw_state:
+        stream_state = json.loads(raw_state)
+        group_id = stream_state["group_id"]
+        user_msg = stream_state["user_msg"]
+        tool_call_id = stream_state["tool_call_id"]
+        tool_call_name = stream_state["tool_call_name"]
+        tool_call_args = stream_state["tool_call_args"]
+        await redis_client.delete(redis_key)
+
+    buffered: list[ChatMessage] = []
+    is_completed = True
+
+    sub_graph = await _get_sub_graph_state(websocket, config)
+
+    if sub_graph and group_id and tool_call_id and tool_call_name and tool_call_args:
         approve = message.get("approve")
-        if approve == ApproveType.ACCEPT:
-            input = Command(resume={"type": message.get("approve")})
-            is_approved = True
 
-        elif approve == ApproveType.DENY:
-            updated = await update_confirmation_message_approve(
-                chat.id, group_id, str(msg_id), False
+        if approve == ApproveType.ACCEPT or approve == ApproveType.EDIT:
+            if approve == ApproveType.EDIT:
+                msg_args = message.get("args")
+                ai_message = AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": tool_call_name,
+                            "args": {**tool_call_args, **(msg_args or {})},
+                            "id": tool_call_id,
+                        }
+                    ],
+                )
+
+                await websocket.app.state.supervisor_agent.abulk_update_state(
+                    sub_graph.config, [[StateUpdate(values={"messages": [ai_message]})]]
+                )
+
+            await _send_stream_messages(
+                websocket, redis_client, chat, group_id, config, None, buffered
             )
-            stream_msg: StreamChatMessage = {
+
+            updated = await update_confirmation_message_approve(
+                chat.id, group_id, str(msg_id), True
+            )
+            accept_msg: StreamChatMessage = {
                 "id": updated.id,
                 "chat_id": updated.chatId,
                 "role": ChatRole(updated.role),
@@ -291,139 +491,28 @@ async def _stream_messages(
                 "group_id": group_id,
                 "type": StreamType.END_CONFIRMATION,
             }
-            await websocket.send_json(stream_msg)
+            await websocket.send_json(accept_msg)
 
-    else:
-        input = {"messages": [{"role": "user", "content": message}]}
+        elif approve == ApproveType.DENY:
+            updated = await update_confirmation_message_approve(
+                chat.id, group_id, str(msg_id), False
+            )
+            deny_msg: StreamChatMessage = {
+                "id": updated.id,
+                "chat_id": updated.chatId,
+                "role": ChatRole(updated.role),
+                "timestamp": updated.timestamp,
+                "content": updated.content,
+                "group_id": group_id,
+                "type": StreamType.END_CONFIRMATION,
+            }
+            await websocket.send_json(deny_msg)
 
-    if input:
-        async for stream_mode, chunk in websocket.app.state.supervisor_agent.astream(
-            input, stream_mode=["updates", "messages"], config=config
-        ):
-            if stream_mode != "messages" or not isinstance(chunk, tuple):
-                continue
-
-            token, _ = chunk
-            if isinstance(token, AIMessageChunk) and not token.tool_calls:
-                content = _merge_token_content(token)
-
-                if content == "<think>":
-                    if current:
-                        stream_msg: StreamChatMessage = {
-                            **current,
-                            "type": StreamType.END_MESSAGING,
-                        }
-                        await websocket.send_json(stream_msg)
-                        buffered.append(current)
-                        current = None
-
-                    thinking = True
-                    current = {
-                        "id": str(uuid4()),
-                        "chat_id": chat.id,
-                        "role": ChatRole.SYSTEM,
-                        "timestamp": datetime.now(timezone.utc).timestamp(),
-                        "content": "",
-                        "group_id": group_id,
-                    }
-                    stream_msg: StreamChatMessage = {
-                        **current,
-                        "type": StreamType.START_THINKING,
-                    }
-                    await websocket.send_json(stream_msg)
-                    await _cache_stream_to_redis(
-                        redis_client, chat.id, current, thinking
-                    )
-                    continue
-
-                if content == "</think>":
-                    thinking = False
-                    if current:
-                        stream_msg: StreamChatMessage = {
-                            **current,
-                            "type": StreamType.END_THINKING,
-                        }
-                        await websocket.send_json(stream_msg)
-                        buffered.append(current)
-                    current = None
-                    await redis_client.delete(f"chat_messages_in_progress:{chat.id}")
-                    continue
-
-                if thinking and current:
-                    current["timestamp"] = datetime.now(timezone.utc).timestamp()
-                    current["content"] = str(current["content"]) + content
-                    stream_msg: StreamChatMessage = {
-                        **current,
-                        "type": StreamType.THINKING,
-                    }
-                    await websocket.send_json(stream_msg)
-                    await _cache_stream_to_redis(
-                        redis_client, chat.id, current, thinking
-                    )
-                    continue
-
-                if not thinking:
-                    if current is None:
-                        if not content.strip():
-                            continue
-                        current = {
-                            "id": str(uuid4()),
-                            "chat_id": chat.id,
-                            "role": ChatRole.ASSISTANT,
-                            "timestamp": datetime.now(timezone.utc).timestamp(),
-                            "content": content,
-                            "group_id": group_id,
-                        }
-                        stream_msg: StreamChatMessage = {
-                            **current,
-                            "type": StreamType.START_MESSAGING,
-                        }
-                        await websocket.send_json(stream_msg)
-                    else:
-                        current["timestamp"] = datetime.now(timezone.utc).timestamp()
-                        current["content"] = str(current["content"]) + content
-                        stream_msg: StreamChatMessage = {
-                            **current,
-                            "type": StreamType.MESSAGING,
-                        }
-                        await websocket.send_json(stream_msg)
-
-                    await _cache_stream_to_redis(
-                        redis_client, chat.id, current, thinking
-                    )
-
-            elif isinstance(token, ToolMessage):
-                logger.info(token)
-
-    if current:
-        buffered.append(current)
-        stream_msg: StreamChatMessage = {**current, "type": StreamType.END_MESSAGING}
-        await websocket.send_json(stream_msg)
-        current = None
-
-    if is_approved:
-        updated = await update_confirmation_message_approve(
-            chat.id, group_id, str(msg_id), True
-        )
-        stream_msg: StreamChatMessage = {
-            "id": updated.id,
-            "chat_id": updated.chatId,
-            "role": ChatRole(updated.role),
-            "timestamp": updated.timestamp,
-            "content": updated.content,
-            "group_id": group_id,
-            "type": StreamType.END_CONFIRMATION,
-        }
-        await websocket.send_json(stream_msg)
-
-    if input is None:
-        is_completed = True
-    else:
         is_completed = await _is_completed(
-            websocket, redis_client, config, chat, group_id, buffered
+            websocket, redis_client, config, chat, group_id, buffered, user_msg
         )
 
-    return is_completed, buffered
+    return is_completed, buffered, user_msg
 
 
 async def handle_user_message(
@@ -436,37 +525,21 @@ async def handle_user_message(
     message: Union[str, dict] = data.get("message")
 
     chat = await _handle_chat(websocket, user_id, chat_id)
-
-    group_id = None
-    msg_id = None
-    is_completed = True
-    buffered = None
+    config = await _get_config(chat.id, user_id)
 
     if isinstance(message, dict):
-        msg_id = data.get("msg_id")
-        redis_key = f"chat_messages_in_confirmation:{msg_id}"
-        raw_state = await redis_client.get(redis_key)
-        if raw_state:
-            stream_state = json.loads(raw_state)
-            group_id = stream_state["group_id"]
-            await redis_client.delete(redis_key)
-    else:
-        group_id = str(uuid.uuid4())
-        await _handle_init_user_message(websocket, chat.id, group_id, message)
-
-    if group_id:
-        config = await _get_config(chat.id, user_id)
-
-        is_completed, buffered = await _stream_messages(
-            websocket, redis_client, chat, group_id, message, config, msg_id
+        is_completed, buffered, user_message = await _stream_confirm_messages(
+            websocket, redis_client, chat, data, config
+        )
+    elif isinstance(message, str):
+        is_completed, buffered, user_message = await _stream_user_messages(
+            websocket, redis_client, chat, message, config
         )
 
-        await save_bot_messages(buffered)
+    await save_bot_messages(buffered)
 
     await redis_client.delete(f"chat_messages_in_progress:{chat.id}")
 
-    if buffered and isinstance(message, str):
-        await _generate_chat_title(websocket, user_id, chat, message, buffered)
-
     if is_completed:
+        await _generate_chat_title(websocket, user_id, chat, user_message, buffered[-1])
         await websocket.send_json({"type": "complete", "chat.id": chat.id})

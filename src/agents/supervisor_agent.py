@@ -9,7 +9,7 @@ from agents.user_profile_agent import get_user_profile_agent
 from agents.weather_agent import get_weather_agent
 from config.settings_config import get_settings
 
-SUPERVISOE_NAME = "supervisor"
+SUPERVISOR_NAME = "supervisor"
 
 # prompt
 supervisor_prompt = """You are **My Personal AI**, a supervisor agent responsible for delegating user tasks to the right expert.
@@ -51,7 +51,7 @@ async def build_supervisor_agent(store, checkpointer):
         ],
         model=model,
         tools=[calculator, get_current_time],
-        supervisor_name=SUPERVISOE_NAME,
+        supervisor_name=SUPERVISOR_NAME,
         prompt=supervisor_prompt,
         output_mode="full_history",
         add_handoff_messages=False,
