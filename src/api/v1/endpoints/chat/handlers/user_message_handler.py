@@ -15,6 +15,7 @@ from langchain_core.messages import (
     AIMessageChunk,
     BaseMessage,
     HumanMessage,
+    RemoveMessage,
     ToolMessage,
 )
 from langgraph.types import StateSnapshot, StateUpdate
@@ -132,9 +133,9 @@ async def _get_config(chat_id: str, user_id: str) -> dict:
 
     connectors = await get_connectors(user_id)
     for connector in connectors:
-        config["configurable"][
-            f"{connector.connector_type}_user_id"
-        ] = connector.connector_id
+        config["configurable"][f"{connector.connector_type}_user_id"] = (
+            connector.connector_id
+        )
 
     return config
 
@@ -230,53 +231,80 @@ async def _is_completed(
     if sub_state is None:
         return True
 
+    confirm_tools = websocket.app.state.confirm_tools
+
     if sub_state.next and "tools" in sub_state.next:
         last_message = sub_state.values["messages"][-1]
+
         if hasattr(last_message, "tool_calls") and last_message.tool_calls:
             tool_call = last_message.tool_calls[0]
-            confirmation: ConfirmationChatMessage = {
-                "name": tool_call.get("name"),
-                "args": tool_call.get("args"),
-                "approve": None,
-            }
-            current: ChatMessage = {
-                "id": str(uuid4()),
-                "chat_id": chat.id,
-                "role": ChatRole.CONFIRMATION,
-                "timestamp": datetime.now(timezone.utc).timestamp(),
-                "content": confirmation,
-                "group_id": group_id,
-            }
-            buffered.append(
-                {
-                    **current,
-                    "content": {
-                        **confirmation,
-                        "approve": False,
-                    },
+            if (
+                sub_state.metadata is not None
+                and sub_state.metadata.get("langgraph_node") in confirm_tools
+                and tool_call.get("name")
+                in confirm_tools[sub_state.metadata.get("langgraph_node")]
+            ):
+                confirmation: ConfirmationChatMessage = {
+                    "name": tool_call.get("name"),
+                    "args": tool_call.get("args"),
+                    "approve": ApproveType.ASKING,
                 }
-            )
-            stream_msg: StreamChatMessage = {
-                **current,
-                "type": StreamType.CONFIRMATION,
-            }
-            await websocket.send_json(stream_msg)
-
-            await redis_client.setex(
-                f"chat_messages_in_confirmation:{current['id']}",
-                get_settings().stream_cache_ttl,
-                json.dumps(
+                current: ChatMessage = {
+                    "id": str(uuid4()),
+                    "chat_id": chat.id,
+                    "role": ChatRole.CONFIRMATION,
+                    "timestamp": datetime.now(timezone.utc).timestamp(),
+                    "content": confirmation,
+                    "group_id": group_id,
+                }
+                buffered.append(
                     {
-                        "group_id": group_id,
-                        "tool_call_id": tool_call.get("id"),
-                        "tool_call_name": tool_call.get("name"),
-                        "tool_call_args": tool_call.get("args"),
-                        "user_msg": user_msg,
+                        **current,
+                        "content": {
+                            **confirmation,
+                            "approve": ApproveType.CANCEL,
+                        },
                     }
-                ),
-            )
+                )
+                stream_msg: StreamChatMessage = {
+                    **current,
+                    "type": StreamType.CONFIRMATION,
+                }
+                await websocket.send_json(stream_msg)
 
-            return False
+                last_user_message = sub_state.values["messages"][-2]
+                await redis_client.setex(
+                    f"chat_messages_in_confirmation:{current['id']}",
+                    get_settings().stream_cache_ttl,
+                    json.dumps(
+                        {
+                            "group_id": group_id,
+                            "tool_call_id": tool_call.get("id"),
+                            "tool_call_name": tool_call.get("name"),
+                            "tool_call_args": tool_call.get("args"),
+                            "user_msg": user_msg,
+                            "sub_last_user_msg_id": last_user_message.id,
+                            "sub_last_msg_id": last_message.id,
+                        }
+                    ),
+                )
+
+                return False
+
+        # continue with the next state
+        await _send_stream_messages(
+            websocket,
+            redis_client,
+            chat,
+            group_id,
+            config,
+            None,
+            buffered,
+        )
+
+        return await _is_completed(
+            websocket, redis_client, config, chat, group_id, buffered, user_msg
+        )
 
     return True
 
@@ -287,14 +315,18 @@ async def _send_stream_messages(
     chat: PrismaChat,
     group_id: str,
     config: dict,
-    message: Optional[BaseMessage] = None,
+    message: Union[BaseMessage, None] = None,
     buffered: list[ChatMessage] = [],
 ) -> None:
     current: Optional[ChatMessage] = None
     thinking = False
 
+    input = None
+    if isinstance(message, BaseMessage):
+        input = {"messages": [message]}
+
     async for stream_mode, chunk in websocket.app.state.supervisor_agent.astream(
-        {"messages": [message]} if message is not None else None,
+        input,
         stream_mode=["updates", "messages"],
         config=config,
     ):
@@ -431,6 +463,8 @@ async def _stream_confirm_messages(
 ) -> tuple[bool, list[ChatMessage], Optional[str]]:
     group_id = None
     user_msg = None
+    sub_last_user_msg_id = None
+    sub_last_msg_id = None
     tool_call_id = None
     tool_call_name = None
     tool_call_args = None
@@ -443,6 +477,8 @@ async def _stream_confirm_messages(
     if raw_state:
         stream_state = json.loads(raw_state)
         group_id = stream_state["group_id"]
+        sub_last_user_msg_id = stream_state.get("sub_last_user_msg_id")
+        sub_last_msg_id = stream_state.get("sub_last_msg_id")
         user_msg = stream_state["user_msg"]
         tool_call_id = stream_state["tool_call_id"]
         tool_call_name = stream_state["tool_call_name"]
@@ -454,18 +490,60 @@ async def _stream_confirm_messages(
 
     sub_graph = await _get_sub_graph_state(websocket, config)
 
-    if sub_graph and group_id and tool_call_id and tool_call_name and tool_call_args:
-        approve = message.get("approve")
+    if (
+        sub_graph
+        and group_id
+        and sub_last_user_msg_id
+        and sub_last_msg_id
+        and tool_call_id
+        and tool_call_name
+        and tool_call_args
+    ):
+        approve_value = message.get("approve")
+        if approve_value is None:
+            raise ValueError("Missing 'approve' value in message")
 
-        if approve == ApproveType.ACCEPT or approve == ApproveType.EDIT:
-            if approve == ApproveType.EDIT:
-                msg_args = message.get("args")
+        approve: ApproveType = ApproveType(approve_value)
+
+        update_data: Optional[dict] = message.get("data")
+        if (
+            approve == ApproveType.UPDATE or approve == ApproveType.FEEDBACK
+        ) and update_data is None:
+            raise ValueError("Missing 'data' for update in message")
+
+        updated_chat_message = await update_confirmation_message_approve(
+            chat.id, group_id, str(msg_id), approve, update_data
+        )
+        confirm_msg: StreamChatMessage = {
+            "id": updated_chat_message.id,
+            "chat_id": updated_chat_message.chatId,
+            "role": ChatRole(updated_chat_message.role),
+            "timestamp": updated_chat_message.timestamp,
+            "content": updated_chat_message.content,
+            "group_id": updated_chat_message.groupId,
+            "type": StreamType.END_CONFIRMATION,
+        }
+        await websocket.send_json(confirm_msg)
+
+        if approve == ApproveType.ACCEPT or approve == ApproveType.UPDATE:
+            if approve == ApproveType.UPDATE:
+                if (
+                    update_data is None
+                    or "args" not in update_data
+                    or update_data["args"] is None
+                ):
+                    raise ValueError("Missing 'args' for update in message")
+
+                update_args = update_data["args"]
                 ai_message = AIMessage(
                     content="",
                     tool_calls=[
                         {
                             "name": tool_call_name,
-                            "args": {**tool_call_args, **(msg_args or {})},
+                            "args": {
+                                **tool_call_args,
+                                **update_args,
+                            },
                             "id": tool_call_id,
                         }
                     ],
@@ -479,34 +557,47 @@ async def _stream_confirm_messages(
                 websocket, redis_client, chat, group_id, config, None, buffered
             )
 
-            updated = await update_confirmation_message_approve(
-                chat.id, group_id, str(msg_id), True
-            )
-            accept_msg: StreamChatMessage = {
-                "id": updated.id,
-                "chat_id": updated.chatId,
-                "role": ChatRole(updated.role),
-                "timestamp": updated.timestamp,
-                "content": updated.content,
-                "group_id": group_id,
-                "type": StreamType.END_CONFIRMATION,
-            }
-            await websocket.send_json(accept_msg)
+        elif approve == ApproveType.FEEDBACK:
+            if update_data is None or "message" not in update_data:
+                raise ValueError("Missing 'message' for feedback in message")
 
-        elif approve == ApproveType.DENY:
-            updated = await update_confirmation_message_approve(
-                chat.id, group_id, str(msg_id), False
+            feedback_message = ToolMessage(
+                tool_call_id=tool_call_id,
+                content=update_data["message"],
             )
-            deny_msg: StreamChatMessage = {
-                "id": updated.id,
-                "chat_id": updated.chatId,
-                "role": ChatRole(updated.role),
-                "timestamp": updated.timestamp,
-                "content": updated.content,
-                "group_id": group_id,
-                "type": StreamType.END_CONFIRMATION,
-            }
-            await websocket.send_json(deny_msg)
+            await _send_stream_messages(
+                websocket,
+                redis_client,
+                chat,
+                group_id,
+                config,
+                feedback_message,
+                buffered,
+            )
+
+        elif approve == ApproveType.CANCEL:
+            await websocket.app.state.supervisor_agent.abulk_update_state(
+                sub_graph.config,
+                [
+                    [
+                        StateUpdate(
+                            values={"messages": [RemoveMessage(id=sub_last_msg_id)]}
+                        )
+                    ]
+                ],
+            )
+            await websocket.app.state.supervisor_agent.abulk_update_state(
+                config,
+                [
+                    [
+                        StateUpdate(
+                            values={
+                                "messages": [RemoveMessage(id=sub_last_user_msg_id)]
+                            }
+                        )
+                    ]
+                ],
+            )
 
         is_completed = await _is_completed(
             websocket, redis_client, config, chat, group_id, buffered, user_msg
@@ -541,5 +632,8 @@ async def handle_user_message(
     await redis_client.delete(f"chat_messages_in_progress:{chat.id}")
 
     if is_completed:
-        await _generate_chat_title(websocket, user_id, chat, user_message, buffered[-1])
+        if len(buffered) > 0:
+            await _generate_chat_title(
+                websocket, user_id, chat, user_message, buffered[-1]
+            )
         await websocket.send_json({"type": "complete", "chat.id": chat.id})

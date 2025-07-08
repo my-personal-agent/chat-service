@@ -5,6 +5,7 @@ from langchain_core.messages import AnyMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_ollama import ChatOllama
+from langgraph.graph.graph import CompiledGraph
 from langgraph.prebuilt import create_react_agent
 from langgraph.prebuilt.chat_agent_executor import AgentState
 
@@ -89,7 +90,7 @@ mcp_client = MultiServerMCPClient(mcp_config)  # type: ignore
 
 
 @alru_cache()
-async def get_google_agent():
+async def get_google_agent() -> tuple[CompiledGraph, list[str]]:
     tools = await mcp_client.get_tools()
 
     model = ChatOllama(
@@ -105,4 +106,4 @@ async def get_google_agent():
         interrupt_before=["tools"],
     )
 
-    return agent
+    return agent, ["send_gmail"]

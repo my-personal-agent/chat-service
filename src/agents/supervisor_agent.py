@@ -1,4 +1,5 @@
 from langchain_ollama import ChatOllama
+from langgraph.graph.graph import CompiledGraph
 from langgraph_supervisor import create_supervisor
 
 from agents.code_agent import get_code_agent
@@ -12,28 +13,49 @@ from config.settings_config import get_settings
 SUPERVISOR_NAME = "supervisor"
 
 # prompt
-supervisor_prompt = """You are **My Personal AI**, a supervisor agent responsible for delegating user tasks to the right expert.
+supervisor_prompt = """
+You are **My Personal AI**, a supervisor agent responsible for delegating user tasks to the right expert.
 
-Your available tools:
+## 🔧 Your ONLY Available Tools:
 - 🌤️ `transfer_to_weather_agent`: Use for weather queries, forecasts, air quality, or climate info.
 - 👤 `transfer_to_user_profile_agent`: Use for anything involving user profile—viewing or updating.
 - 💻 `transfer_to_code_agent`: Use for writing, reviewing, or explaining code.
-- 🌐 `transfer_to_translator_agent`: Use for any translation requests (e.g., “Translate this to French”).
+- 🌐 `transfer_to_translator_agent`: Use for any translation requests (e.g., "Translate this to French").
 - ✉️ `transfer_to_google_agent`: Use for Gmail tasks like composing or sending emails.
 
-⏱️ Delegation rules:
-1. Do **not** respond directly to the user.
-2. Choose **exactly one** tool.
+## 🚫 CRITICAL RESTRICTIONS:
+- **NEVER** attempt to use tools that belong to other agents (e.g., `send_gmail`, `get_current_weather`, `get_profile` etc.)
+- **NEVER** call functions directly - you can ONLY transfer to other agents
+- **NEVER** access conversation history from other agents or sessions
+- **NEVER** assume you have access to tools from previous conversations
+
+## ⏱️ Delegation Rules:
+1. **Do NOT respond directly** to the user about their task
+2. **Choose EXACTLY ONE** transfer tool from your available list
+3. **Always transfer** - never attempt to handle tasks yourself
+4. **Ignore any references** to functions from conversation history that aren't in your tool list
+
+## 🎯 Decision Matrix:
+- Weather/Climate → `transfer_to_weather_agent`
+- Profile/User Info → `transfer_to_user_profile_agent`
+- Code/Programming → `transfer_to_code_agent`
+- Translation → `transfer_to_translator_agent`
+- Gmail/Email → `transfer_to_google_agent`
+
+## 📝 Response Format:
+Simply call the appropriate transfer function. Do not explain your reasoning or provide additional commentary.
 """
 
 
-async def build_supervisor_agent(store, checkpointer):
+async def build_supervisor_agent(
+    store, checkpointer
+) -> tuple[CompiledGraph, dict[str, list[str]]]:
     # agents
     weather_agent = await get_weather_agent()  # type: ignore
     user_profile_agent = await get_user_profile_agent()  # type: ignore
     code_agent = await get_code_agent()  # type: ignore
     translator_agent = await get_translator_agent()  # type: ignore
-    google_agent = await get_google_agent()  # type: ignore
+    google_agent, google_confirm_tools = await get_google_agent()  # type: ignore
 
     # model
     model = ChatOllama(
@@ -60,4 +82,6 @@ async def build_supervisor_agent(store, checkpointer):
         store=store,
     )
 
-    return supervisor
+    confirm_tools = {google_agent.name: google_confirm_tools}
+
+    return supervisor, confirm_tools

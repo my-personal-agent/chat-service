@@ -17,7 +17,7 @@ from db.prisma.generated.enums import Role
 from db.prisma.generated.models import Chat, Connector
 from db.prisma.generated.models import ChatMessage as PrismaChatMessage
 from db.prisma.utils import get_db
-from enums.chat import ChatRole
+from enums.chat import ApproveType, ChatRole
 
 
 async def get_chat(user_id: str, chat_id: str) -> Chat:
@@ -117,7 +117,11 @@ async def save_bot_messages(messages: list[ChatMessage]) -> None:
 
 
 async def update_confirmation_message_approve(
-    chat_id: str, group_id: str, msg_id: str, approve: bool
+    chat_id: str,
+    group_id: str,
+    msg_id: str,
+    approve: ApproveType,
+    data: Optional[dict] = None,
 ) -> PrismaChatMessage:
     db = await get_db()
 
@@ -129,7 +133,7 @@ async def update_confirmation_message_approve(
 
     updated = await db.chatmessage.update(
         where={"id": msg_id},
-        data={"content": Json({**message.content, "approve": approve})},
+        data={"content": Json({**message.content, "approve": approve, **(data or {})})},
     )
 
     if not updated:

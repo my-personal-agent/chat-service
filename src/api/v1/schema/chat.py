@@ -2,13 +2,13 @@ from typing import Optional, TypedDict, Union
 
 from pydantic import BaseModel
 
-from enums.chat import ChatRole, StreamType
+from enums.chat import ApproveType, ChatRole, StreamType
 
 
 class ConfirmationChatMessage(TypedDict):
     name: str
     args: dict
-    approve: Optional[bool]
+    approve: ApproveType
 
 
 class ChatResponse(BaseModel):

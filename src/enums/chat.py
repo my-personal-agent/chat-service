@@ -23,6 +23,8 @@ class StreamType(str, Enum):
 
 
 class ApproveType(str, Enum):
+    ASKING = "asking"
     ACCEPT = "accept"
-    EDIT = "edit"
-    DENY = "deny"
+    UPDATE = "update"
+    FEEDBACK = "feedback"
+    CANCEL = "cancel"
