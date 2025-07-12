@@ -44,4 +44,4 @@ async def get_chats(
 async def delete_chat(request: Request, chat_id: str):
     # todo
     user_id = "user_id"
-    return await delete_chat_of_user(user_id, str(chat_id))
+    await delete_chat_of_user(user_id, str(chat_id))
