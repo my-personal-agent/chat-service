@@ -9,15 +9,20 @@ import aiofiles
 import ollama
 from fastapi import HTTPException, UploadFile
 from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import (
     CSVLoader,
     JSONLoader,
     PyMuPDFLoader,
     TextLoader,
+    UnstructuredEmailLoader,
     UnstructuredExcelLoader,
+    UnstructuredFileLoader,
+    UnstructuredHTMLLoader,
     UnstructuredPowerPointLoader,
+    UnstructuredRTFLoader,
     UnstructuredWordDocumentLoader,
+    UnstructuredXMLLoader,
 )
 
 from api.v1.schema.chat import UploadFileChunkResponse
@@ -28,33 +33,137 @@ from db.prisma.utils import get_db
 logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {
+    # Text files
     ".txt": TextLoader,
+    ".md": TextLoader,
+    ".markdown": TextLoader,
+    ".rst": TextLoader,
+    ".rtf": UnstructuredRTFLoader,
+    # PDF files
     ".pdf": PyMuPDFLoader,
+    # CSV and data files
     ".csv": CSVLoader,
+    ".tsv": CSVLoader,  # Tab-separated values
+    # Microsoft Office documents
     ".docx": UnstructuredWordDocumentLoader,
     ".doc": UnstructuredWordDocumentLoader,
     ".xlsx": UnstructuredExcelLoader,
     ".xls": UnstructuredExcelLoader,
     ".pptx": UnstructuredPowerPointLoader,
     ".ppt": UnstructuredPowerPointLoader,
+    # Structured data
     ".json": JSONLoader,
+    ".jsonl": JSONLoader,
+    ".xml": UnstructuredXMLLoader,
+    ".yaml": UnstructuredFileLoader,
+    ".yml": UnstructuredFileLoader,
+    # Web formats
+    ".html": UnstructuredHTMLLoader,
+    ".htm": UnstructuredHTMLLoader,
+    # Email formats
+    ".eml": UnstructuredEmailLoader,
+    ".msg": UnstructuredEmailLoader,
+    # OpenDocument formats (LibreOffice)
+    ".odt": UnstructuredFileLoader,  # OpenDocument Text
+    ".ods": UnstructuredFileLoader,  # OpenDocument Spreadsheet
+    ".odp": UnstructuredFileLoader,  # OpenDocument Presentation
+    # Code files (treated as text)
+    ".py": TextLoader,
+    ".js": TextLoader,
+    ".ts": TextLoader,
+    ".java": TextLoader,
+    ".cpp": TextLoader,
+    ".c": TextLoader,
+    ".cs": TextLoader,
+    ".php": TextLoader,
+    ".rb": TextLoader,
+    ".go": TextLoader,
+    ".rs": TextLoader,
+    ".sql": TextLoader,
+    # Configuration files
+    ".ini": TextLoader,
+    ".cfg": TextLoader,
+    ".conf": TextLoader,
+    ".env": TextLoader,
+    # Log files
+    ".log": TextLoader,
+    # Subtitle files
+    ".srt": TextLoader,
+    ".vtt": TextLoader,
 }
 
 
-def get_loader(file_path: str, file_extension: str):
+def _get_loader(file_path: str, file_extension: str):
     """Get appropriate loader for file type"""
     loader_class = SUPPORTED_EXTENSIONS.get(file_extension.lower())
     if not loader_class:
         raise ValueError(f"Unsupported file type: {file_extension}")
 
-    # Special handling for JSON files
+    # Special handling for different file types
     if file_extension.lower() == ".json":
         return loader_class(file_path, jq_schema=".", text_content=False)
+    elif file_extension.lower() == ".jsonl":
+        return loader_class(
+            file_path, jq_schema=".", text_content=False, json_lines=True
+        )
+    elif file_extension.lower() in [".tsv"]:
+        # Handle tab-separated values
+        return CSVLoader(file_path, csv_args={"delimiter": "\t"})
+    elif file_extension.lower() in [".yaml", ".yml", ".odt", ".ods", ".odp"]:
+        return UnstructuredFileLoader(file_path)
+    elif file_extension.lower() in [
+        ".py",
+        ".js",
+        ".ts",
+        ".java",
+        ".cpp",
+        ".c",
+        ".cs",
+        ".php",
+        ".rb",
+        ".go",
+        ".rs",
+        ".sql",
+        ".ini",
+        ".cfg",
+        ".conf",
+        ".env",
+        ".log",
+        ".srt",
+        ".vtt",
+        ".md",
+        ".markdown",
+        ".rst",
+    ]:
+        # Handle code and text files with encoding
+        return TextLoader(file_path, encoding="utf-8")
 
     return loader_class(file_path)
 
 
-def process_file(
+def _get_language_from_extension(file_extension: str) -> Language | None:
+    """Map file extensions to Language enum values for code-aware splitting"""
+    language_map = {
+        ".py": Language.PYTHON,
+        ".js": Language.JS,
+        ".ts": Language.TS,
+        ".java": Language.JAVA,
+        ".cpp": Language.CPP,
+        ".c": Language.C,
+        ".cs": Language.CSHARP,
+        ".php": Language.PHP,
+        ".rb": Language.RUBY,
+        ".go": Language.GO,
+        ".rs": Language.RUST,
+        ".html": Language.HTML,
+        ".htm": Language.HTML,
+        ".md": Language.MARKDOWN,
+        ".markdown": Language.MARKDOWN,
+    }
+    return language_map.get(file_extension.lower())
+
+
+def _process_file(
     user_id: str,
     file_id: str,
     file_path: str,
@@ -63,8 +172,16 @@ def process_file(
     """Process a file and return chunked documents"""
     file_extension = Path(file_path).suffix
 
-    loader = get_loader(file_path, file_extension)
-    documents = loader.load()
+    try:
+        loader = _get_loader(file_path, file_extension)
+        documents = loader.load()
+    except Exception as e:
+        # Fallback to TextLoader for unsupported file types
+        try:
+            loader = TextLoader(file_path, encoding="utf-8")
+            documents = loader.load()
+        except Exception:
+            raise ValueError(f"Could not process file {file_path}: {str(e)}")
 
     # Add metadata to documents
     for doc in documents:
@@ -75,12 +192,24 @@ def process_file(
         doc.metadata["file_extension"] = file_extension
         doc.metadata["processed_at"] = datetime.now().isoformat()
 
-    # Split documents into chunks
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
-        length_function=len,
-    )
+    # Choose appropriate text splitter based on file type
+    language = _get_language_from_extension(file_extension)
+
+    if language:
+        # Use code-aware splitter for programming languages
+        text_splitter = RecursiveCharacterTextSplitter.from_language(
+            language=language,
+            chunk_size=1000,
+            chunk_overlap=200,
+        )
+    else:
+        # Use default text splitter for other file types
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+            length_function=len,
+        )
+
     chunks = text_splitter.split_documents(documents)
 
     # Add chunk metadata
@@ -91,7 +220,7 @@ def process_file(
     return chunks
 
 
-def get_description(documents: List[Document]):
+def _get_description(documents: List[Document]):
     file_text = "\n\n".join(doc.page_content for doc in documents[:10])
 
     prompt = (
@@ -142,9 +271,9 @@ async def upload_file_chunks(
                     await outfile.write(data)
 
         try:
-            docs = process_file(user_id, file_id, str(final_path))
+            docs = _process_file(user_id, file_id, str(final_path))
             add_documents_to_qdrant(docs)
-            description = get_description(docs)
+            description = _get_description(docs)
 
             db = await get_db()
             await db.uploadfile.create(
