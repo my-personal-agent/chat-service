@@ -8,6 +8,7 @@ from api.v1.schema.chat import (
     ChatMessage,
     ChatMessageResponse,
     ChatMessagesResponse,
+    ChatMessageUploadFile,
     ChatResponse,
     ChatsResponse,
     ConfirmationChatMessage,
@@ -70,7 +71,7 @@ async def upsert_chat(user_id: str, chat_id: Optional[str] = None) -> tuple[bool
 
 
 async def save_user_message(
-    chat_id: str, group_id: str, message: str
+    chat_id: str, group_id: str, message: str, upload_files: List[ChatMessageUploadFile]
 ) -> PrismaChatMessage:
     db = await get_db()
 
@@ -82,6 +83,11 @@ async def save_user_message(
             "role": Role.user,
             "groupId": group_id,
             "timestamp": datetime.now(timezone.utc).timestamp(),
+            "uploadFiles": (
+                {"connect": [{"id": file["id"]} for file in upload_files]}
+                if upload_files
+                else {"connect": []}
+            ),
         }
     )
 
@@ -143,9 +149,13 @@ async def update_confirmation_message_approve(
 
 
 async def get_messages_by_chat_id(
-    chat_id: str, limit: int, cursor: Optional[str] = None
+    user_id: str, chat_id: str, limit: int, cursor: Optional[str] = None
 ) -> ChatMessagesResponse:
     db = await get_db()
+
+    chat = await db.chat.find_first(where={"id": chat_id, "userId": user_id})
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
 
     total = await db.chatmessage.count(where={"chatId": chat_id})
     query_args = {
@@ -158,7 +168,9 @@ async def get_messages_by_chat_id(
         query_args["cursor"] = {"id": cursor}
         query_args["skip"] = 1  # Skip the cursor itself
 
-    messages = await db.chatmessage.find_many(**query_args)
+    messages = await db.chatmessage.find_many(
+        **query_args, include={"uploadFiles": True}
+    )
 
     has_next_page = len(messages) > limit
     next_cursor = messages[-1].id if has_next_page else None
@@ -174,6 +186,13 @@ async def get_messages_by_chat_id(
                 role=ChatRole(mes.role),
                 timestamp=mes.timestamp,
                 chat_id=mes.chatId,
+                group_id=mes.groupId,
+                upload_files=[
+                    ChatMessageUploadFile(
+                        id=file.id, filename=file.filename, description=file.description
+                    )
+                    for file in (mes.uploadFiles or [])
+                ],
             )
             for mes in paginated_messages
         ],
@@ -241,3 +260,22 @@ async def get_user_fullname(user_id: str) -> str:
         return f"{user.firstName} {user.lastName}"
 
     return user.firstName
+
+
+async def get_asked_files(chat_id: str) -> List[ChatMessageUploadFile]:
+    db = await get_db()
+
+    results = await db.chatmessage.find_many(
+        where={"chatId": chat_id}, include={"uploadFiles": True}
+    )
+
+    files_dict = {
+        file.id: file
+        for chatmessage in results
+        for file in (chatmessage.uploadFiles or [])
+    }
+
+    return [
+        {"id": file.id, "filename": file.filename, "description": file.description}
+        for file in files_dict.values()
+    ]

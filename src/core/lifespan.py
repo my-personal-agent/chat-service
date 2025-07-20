@@ -10,6 +10,7 @@ from langgraph.store.postgres.base import PoolConfig
 from agents.embeddings import get_lang_store_embeddings
 from agents.supervisor_agent import build_supervisor_agent
 from config.settings_config import get_settings
+from core.qdrant import setup_qdrant
 from core.redis_manager import redis_manager
 from db.prisma.utils import get_db
 
@@ -90,6 +91,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # redis
     await redis_manager.connect()
+
+    # qdrant
+    setup_qdrant()
 
     # embeddings
     embeddings, dims = get_lang_store_embeddings()

@@ -1,6 +1,6 @@
 from async_lru import alru_cache
 from langchain_ollama import ChatOllama
-from langgraph.graph.graph import CompiledGraph
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import create_react_agent
 
 from agents.tools.user_profile import get_profile, update_profile
@@ -100,7 +100,7 @@ You are **UserProfileAgent**, a helpful assistant that manages user profile info
 
 
 @alru_cache()
-async def get_user_profile_agent() -> CompiledGraph:
+async def get_user_profile_agent() -> CompiledStateGraph:
     tools = [get_profile, update_profile]
 
     model = ChatOllama(

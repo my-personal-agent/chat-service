@@ -34,8 +34,18 @@ class Settings(BaseSettings):
     ]
     google_agent_model: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
 
+    supervisor_rag_agent_model: Annotated[
+        str, BeforeValidator(str.strip), Field(min_length=1)
+    ]
+    upload_file_agent_model: Annotated[
+        str, BeforeValidator(str.strip), Field(min_length=1)
+    ]
+
     # models
     chat_title_model: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
+    chat_upload_file_description_model: Annotated[
+        str, BeforeValidator(str.strip), Field(min_length=1)
+    ]
     memory_summarizer_model: Annotated[
         str, BeforeValidator(str.strip), Field(min_length=1)
     ]
@@ -54,6 +64,21 @@ class Settings(BaseSettings):
     ]
     postgres_pool_min_size: Annotated[int, Field(ge=0)]
     postgres_pool_max_size: Annotated[int, Field(ge=0)]
+
+    # qdrant
+    qdrant_url: AnyHttpUrl
+    qdrant_embeddings_model: Annotated[
+        str, BeforeValidator(str.strip), Field(min_length=1)
+    ]
+    qdrant_embeddings_model_dims: Annotated[int, Field(ge=0)]
+    qdrant_upload_collection_name: Annotated[
+        str, BeforeValidator(str.strip), Field(min_length=1)
+    ]
+
+    # dir
+    rag_agent_upload_temp_dir: Annotated[
+        str, BeforeValidator(str.strip), Field(min_length=1)
+    ]
 
     # semantic and store
     lang_store_embeddings_model: Annotated[

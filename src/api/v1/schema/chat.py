@@ -1,4 +1,4 @@
-from typing import Optional, TypedDict, Union
+from typing import List, Optional, TypedDict, Union
 
 from pydantic import BaseModel
 
@@ -23,12 +23,20 @@ class ChatsResponse(BaseModel):
     chats: list[ChatResponse]
 
 
+class ChatMessageUploadFile(TypedDict):
+    id: str
+    filename: str
+    description: str
+
+
 class ChatMessageResponse(BaseModel):
     id: str
     content: Union[str, ConfirmationChatMessage]
     role: ChatRole
     timestamp: float
     chat_id: str
+    group_id: str
+    upload_files: List[ChatMessageUploadFile]
 
 
 class ChatMessagesResponse(BaseModel):
@@ -44,6 +52,7 @@ class ChatMessage(TypedDict):
     timestamp: float
     content: Union[str, ConfirmationChatMessage]
     group_id: str
+    upload_files: List[ChatMessageUploadFile]
 
 
 class StreamChat(TypedDict):
@@ -60,3 +69,9 @@ class StreamChatTitle(TypedDict):
 
 class StreamChatMessage(ChatMessage):
     type: StreamType
+
+
+class UploadFileChunkResponse(BaseModel):
+    file_id: str
+    file_name: str
+    complete: bool

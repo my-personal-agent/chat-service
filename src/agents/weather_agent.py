@@ -3,6 +3,7 @@ import logging
 from async_lru import alru_cache
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_ollama import ChatOllama
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import create_react_agent
 
 from config.settings_config import get_settings
@@ -33,7 +34,7 @@ mcp_client = MultiServerMCPClient(mcp_config)  # type: ignore
 
 
 @alru_cache()
-async def get_weather_agent():
+async def get_weather_agent() -> CompiledStateGraph:
     tools = await mcp_client.get_tools()
 
     model = ChatOllama(

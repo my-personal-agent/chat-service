@@ -24,7 +24,9 @@ async def get_chat_messages(
     limit: int = Query(20, ge=1, le=100),
     cursor: str = Query(None),
 ):
-    return await get_messages_by_chat_id(chat_id, limit, cursor)
+    # todo
+    user_id = "user_id"
+    return await get_messages_by_chat_id(user_id, chat_id, limit, cursor)
 
 
 @router.get(
@@ -44,4 +46,4 @@ async def get_chats(
 async def delete_chat(request: Request, chat_id: str):
     # todo
     user_id = "user_id"
-    await delete_chat_of_user(user_id, str(chat_id))
+    await delete_chat_of_user(user_id, chat_id)

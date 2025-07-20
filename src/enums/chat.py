@@ -9,6 +9,7 @@ class ChatRole(str, Enum):
 
 
 class StreamType(str, Enum):
+    INIT = "init"
     START_THINKING = "start_thinking"
     THINKING = "thinking"
     END_THINKING = "end_thinking"

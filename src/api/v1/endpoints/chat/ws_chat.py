@@ -19,7 +19,7 @@ async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
     redis_client = get_redis()
 
-    logger.info("🔌 Chat WebSocket connected")
+    logger.debug("🔌 Chat WebSocket connected")
 
     try:
         user_id = "user_id"  # TODO: replace with real authentication
@@ -33,7 +33,6 @@ async def websocket_chat(websocket: WebSocket):
                 continue
 
             event_type = data.get("type")
-            logger.debug(f"Event Type: {event_type}")
 
             if event_type == "ping":
                 await handle_ping(websocket)
@@ -47,4 +46,4 @@ async def websocket_chat(websocket: WebSocket):
                 await handle_unknown(websocket, event_type)
 
     except WebSocketDisconnect:
-        logger.info("❌ Chat WebSocket disconnected")
+        logger.debug("❌ Chat WebSocket disconnected")

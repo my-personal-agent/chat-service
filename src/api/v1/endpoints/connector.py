@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request, status
 from fastapi.responses import RedirectResponse
 
 from api.v1.schema.connector import ConnectorsResponse
-from services.v1.connectors_service import (
+from services.v1.connector_service import (
     get_connectors_of_user,
     upsert_connector_of_user,
 )

@@ -1,6 +1,6 @@
 from async_lru import alru_cache
 from langchain_ollama import ChatOllama
-from langgraph.graph.graph import CompiledGraph
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import create_react_agent
 
 from config.settings_config import get_settings
@@ -38,7 +38,7 @@ User: “Translate the medical note and keep tone formal.”
 
 
 @alru_cache()
-async def get_translator_agent() -> CompiledGraph:
+async def get_translator_agent() -> CompiledStateGraph:
     model = ChatOllama(
         model=get_settings().user_profile_agent_model,  # type: ignore
         temperature=0,  # type: ignore
