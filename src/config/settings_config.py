@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     # API
     project_name: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
     project_version: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
+    host: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
+    port: Annotated[int, Field(ge=0)]
     backend_cors_origins: List[AnyHttpUrl]
     allowed_hosts: List[AnyHttpUrl]
 

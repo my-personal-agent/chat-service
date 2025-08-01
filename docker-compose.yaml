@@ -1,0 +1,24 @@
+services:
+  chat-app:
+    build:
+      context: .
+      dockerfile: Docker/Dockerfile
+    container_name: chat-app
+    restart: unless-stopped
+    environment:
+      - ENV=local
+      - MCP_SERVER_WEATHER_URL=http://weather-app:8001/mcp
+      - MCP_SERVER_GOOGLE_URL=http://google-app:8003/mcp
+      - POSTGRES_DATABASE_URL=postgresql://postgres:postgres@postgres:5432/my-personal-ai
+      - QDRANT_URL=http://qdrant:6333
+      - REDIS_URL=redis://redis:6379
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    networks:
+      - my-personal-ai-local
+
+networks:
+  my-personal-ai-local:
+    external: true
