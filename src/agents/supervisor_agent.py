@@ -108,6 +108,7 @@ async def build_supervisor_agent(
 
     # model
     model = ChatOllama(
+        base_url=str(get_settings().ollama_base_url),
         model=get_settings().supervisor_agent_model,
         temperature=0,
     )

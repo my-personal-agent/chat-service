@@ -40,8 +40,9 @@ User: “Translate the medical note and keep tone formal.”
 @alru_cache()
 async def get_translator_agent() -> CompiledStateGraph:
     model = ChatOllama(
-        model=get_settings().user_profile_agent_model,  # type: ignore
-        temperature=0,  # type: ignore
+        base_url=str(get_settings().ollama_base_url),
+        model=get_settings().user_profile_agent_model,
+        temperature=0,
     )
 
     agent = create_react_agent(

@@ -1,13 +1,11 @@
 import asyncio
 import json
 import logging
-import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any, List, Optional, Union
 from uuid import uuid4
 
-import ollama
 import redis.asyncio as redis
 from fastapi import WebSocket
 from langchain_core.messages import (
@@ -21,6 +19,7 @@ from langchain_core.messages import (
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import StateSnapshot, StateUpdate
+from ollama import AsyncClient
 
 from api.v1.schema.chat import (
     ChatMessage,
@@ -53,7 +52,7 @@ def _merge_token_content(token: AIMessageChunk) -> str:
     return str(token.content)
 
 
-def _is_greeting(message: str) -> bool:
+async def _is_greeting(message: str) -> bool:
     prompt = f"""
 Determine whether the user's message is only a greeting (e.g. 'hi', 'hello', 'good morning', etc.).
 If yes, respond only with "yes". If not, respond only with "no".
@@ -61,12 +60,13 @@ If yes, respond only with "yes". If not, respond only with "no".
 Message: "{message.strip()}"
 Answer:""".strip()
 
-    response = ollama.generate(model=get_settings().chat_title_model, prompt=prompt)
-    answer = (
-        re.sub(r"<think>.*?</think>", "", response["response"], flags=re.DOTALL)
-        .strip()
-        .lower()
+    client = AsyncClient(host=str(get_settings().ollama_base_url))
+    response = await client.generate(
+        model=get_settings().chat_title_model, prompt=prompt, think=False
     )
+
+    answer = response.response.strip()
+
     return answer.startswith("yes")
 
 
@@ -159,7 +159,7 @@ async def _get_config(
     return config
 
 
-def _generate_title(message: str, last_message: ChatMessage) -> str:
+async def _generate_title(message: str, last_message: ChatMessage) -> str:
     instruction = (
         "Generate a short and relevant title (max 5 words) for the following conversation "
         "between a user and an assistant. Respond with only the title.\n\n"
@@ -172,16 +172,14 @@ def _generate_title(message: str, last_message: ChatMessage) -> str:
         content_str = str(content)
 
     dialogue = f"USER: {message} \n{last_message['role'].capitalize()}: {content_str}"
-
     prompt = f"{instruction}{dialogue}\n\nTitle:"
 
-    response = ollama.generate(
-        model=get_settings().chat_title_model,
-        prompt=prompt,
+    client = AsyncClient(host=str(get_settings().ollama_base_url))
+    response = await client.generate(
+        model=get_settings().chat_title_model, prompt=prompt, think=False
     )
-    title = re.sub(
-        r"<think>.*?</think>", "", response["response"], flags=re.DOTALL
-    ).strip()
+
+    title = response.response.strip()
 
     return title
 
@@ -202,7 +200,9 @@ async def _generate_chat_title(
         await websocket.send_json(stream_chat)
         await asyncio.sleep(0)
 
-        if _is_greeting(message):
+        is_greeting = await _is_greeting(message)
+
+        if is_greeting:
             greeting_title: StreamChatTitle = {
                 "type": StreamType.GENERATED_TITLE,
                 "chat_id": chat.id,
@@ -211,7 +211,7 @@ async def _generate_chat_title(
             }
             await websocket.send_json(greeting_title)
         else:
-            title = _generate_title(message, last_message)
+            title = await _generate_title(message, last_message)
             updated_chat = await update_chat_title(user_id, chat.id, title)
             generated_title: StreamChatTitle = {
                 "type": StreamType.GENERATED_TITLE,

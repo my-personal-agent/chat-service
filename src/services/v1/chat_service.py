@@ -15,8 +15,9 @@ from api.v1.schema.chat import (
 )
 from db.prisma.generated._fields import Json
 from db.prisma.generated.enums import Role
-from db.prisma.generated.models import Chat, Connector
+from db.prisma.generated.models import Chat
 from db.prisma.generated.models import ChatMessage as PrismaChatMessage
+from db.prisma.generated.models import Connector
 from db.prisma.utils import get_db
 from enums.chat import ApproveType, ChatRole
 

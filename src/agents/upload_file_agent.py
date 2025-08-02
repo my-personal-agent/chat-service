@@ -168,6 +168,7 @@ async def get_upload_file_agent() -> CompiledStateGraph:
     ]
 
     model = ChatOllama(
+        base_url=str(get_settings().ollama_base_url),
         model=get_settings().upload_file_agent_model,
         temperature=0,
     )

@@ -94,8 +94,9 @@ async def get_google_agent() -> tuple[CompiledStateGraph, list[str]]:
     tools = await mcp_client.get_tools()
 
     model = ChatOllama(
-        model=get_settings().google_agent_model,  # type: ignore
-        temperature=0,  # type: ignore
+        base_url=str(get_settings().ollama_base_url),
+        model=get_settings().google_agent_model,
+        temperature=0,
     )
 
     agent = create_react_agent(
