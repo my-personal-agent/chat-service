@@ -56,6 +56,7 @@ model ChatMessage {
     id        String @id @default(uuid())
     content   Json
     role      Role
+    agent     Json?
     timestamp Float
 
     groupId String

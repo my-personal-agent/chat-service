@@ -29,6 +29,11 @@ class ChatMessageUploadFile(TypedDict):
     description: str
 
 
+class Agent(TypedDict):
+    id: str
+    name: str
+
+
 class ChatMessageResponse(BaseModel):
     id: str
     content: Union[str, ConfirmationChatMessage]
@@ -37,6 +42,7 @@ class ChatMessageResponse(BaseModel):
     chat_id: str
     group_id: str
     upload_files: List[ChatMessageUploadFile]
+    agent: Optional[Agent]
 
 
 class ChatMessagesResponse(BaseModel):
@@ -53,6 +59,7 @@ class ChatMessage(TypedDict):
     content: Union[str, ConfirmationChatMessage]
     group_id: str
     upload_files: List[ChatMessageUploadFile]
+    agent: Optional[Agent]
 
 
 class StreamChat(TypedDict):

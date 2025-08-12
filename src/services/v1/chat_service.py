@@ -5,6 +5,7 @@ from typing import List, Optional
 from fastapi import HTTPException, status
 
 from api.v1.schema.chat import (
+    Agent,
     ChatMessage,
     ChatMessageResponse,
     ChatMessagesResponse,
@@ -116,6 +117,7 @@ async def save_bot_messages(messages: list[ChatMessage]) -> None:
                 "role": Role(msg["role"]),
                 "groupId": msg["group_id"],
                 "timestamp": msg["timestamp"],
+                "agent": Json(msg["agent"]) if msg.get("agent") else None,  # type: ignore
             }
             for msg in messages
             if _is_non_empty_content(msg["content"])
@@ -184,6 +186,11 @@ async def get_messages_by_chat_id(
             ChatMessageResponse(
                 id=mes.id,
                 content=mes.content,
+                agent=(
+                    Agent(id=str(mes.agent["id"]), name=str(mes.agent["name"]))
+                    if mes.agent
+                    else None
+                ),
                 role=ChatRole(mes.role),
                 timestamp=mes.timestamp,
                 chat_id=mes.chatId,

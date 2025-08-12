@@ -158,7 +158,7 @@ def prompt(state: AgentState, config: RunnableConfig) -> list[AnyMessage]:
 
 
 @alru_cache()
-async def get_upload_file_agent() -> CompiledStateGraph:
+async def get_upload_file_agent() -> tuple[str, CompiledStateGraph]:
     tools = [
         hybrid_search_uploaded_files,
         dense_search_uploaded_files,
@@ -180,4 +180,4 @@ async def get_upload_file_agent() -> CompiledStateGraph:
         name=UPLOAD_FILE_RAF_AGENT_NAME,
     )
 
-    return agent
+    return "Upload File Agent", agent

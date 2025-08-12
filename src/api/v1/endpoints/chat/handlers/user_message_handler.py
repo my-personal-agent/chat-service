@@ -22,6 +22,7 @@ from langgraph.types import StateSnapshot, StateUpdate
 from ollama import AsyncClient
 
 from api.v1.schema.chat import (
+    Agent,
     ChatMessage,
     ChatMessageUploadFile,
     ConfirmationChatMessage,
@@ -123,6 +124,7 @@ async def _handle_init_user_message(
         "timestamp": datetime.now(timezone.utc).timestamp(),
         "content": user_msg.content,
         "upload_files": upload_files,
+        "agent": None,  # No agent for user messages
     }
 
     await websocket.send_json(strem_message)
@@ -276,6 +278,7 @@ async def _is_completed(
                     "content": confirmation,
                     "group_id": group_id,
                     "upload_files": [],
+                    "agent": None,
                 }
                 buffered.append(
                     {
@@ -352,11 +355,22 @@ async def _send_stream_messages(
         input = {"messages": [message]}
 
     supervisor_agent: CompiledStateGraph = websocket.app.state.supervisor_agent
-    async for _, stream_mode, chunk in supervisor_agent.astream(
+    agent_names: dict[str, str] = websocket.app.state.agent_names
+
+    async for agents, stream_mode, chunk in supervisor_agent.astream(
         input, stream_mode=["messages"], config=config, subgraphs=True
     ):
         if stream_mode != "messages" or not isinstance(chunk, tuple):
             continue
+
+        agent: Optional[Agent] = None
+        if len(agents) > 0:
+            agent_id = agents[0].split(":")[0]
+            agent_name = agent_names.get(agent_id, agent_id)
+            agent = Agent(
+                id=agent_id,
+                name=agent_name,
+            )
 
         token, _ = chunk
         if isinstance(token, AIMessageChunk) and not token.tool_calls:
@@ -381,6 +395,7 @@ async def _send_stream_messages(
                     "content": "",
                     "group_id": group_id,
                     "upload_files": [],
+                    "agent": agent,
                 }
                 start_thinking_msg: StreamChatMessage = {
                     **current,
@@ -426,6 +441,7 @@ async def _send_stream_messages(
                         "content": content,
                         "group_id": group_id,
                         "upload_files": [],
+                        "agent": agent,
                     }
                     start_msg: StreamChatMessage = {
                         **current,
@@ -551,6 +567,7 @@ async def _stream_confirm_messages(
             "group_id": updated_chat_message.groupId,
             "upload_files": [],
             "type": StreamType.END_CONFIRMATION,
+            "agent": None,
         }
         await websocket.send_json(confirm_msg)
 

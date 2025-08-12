@@ -36,9 +36,6 @@ class Settings(BaseSettings):
     ]
     google_agent_model: Annotated[str, BeforeValidator(str.strip), Field(min_length=1)]
 
-    supervisor_rag_agent_model: Annotated[
-        str, BeforeValidator(str.strip), Field(min_length=1)
-    ]
     upload_file_agent_model: Annotated[
         str, BeforeValidator(str.strip), Field(min_length=1)
     ]

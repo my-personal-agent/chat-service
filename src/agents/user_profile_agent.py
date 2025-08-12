@@ -100,7 +100,7 @@ You are **UserProfileAgent**, a helpful assistant that manages user profile info
 
 
 @alru_cache()
-async def get_user_profile_agent() -> CompiledStateGraph:
+async def get_user_profile_agent() -> tuple[str, CompiledStateGraph]:
     tools = [get_profile, update_profile]
 
     model = ChatOllama(
@@ -116,4 +116,4 @@ async def get_user_profile_agent() -> CompiledStateGraph:
         name=USER_PROFILE_AGENT_NAME,
     )
 
-    return agent
+    return "User Profile Agent", agent

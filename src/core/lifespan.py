@@ -109,13 +109,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         dims,
     ) as (store, checkpointer):
         # build agents
-        supervisor_agent, confirm_tools = await build_supervisor_agent(
+        supervisor_agent, agent_names, confirm_tools = await build_supervisor_agent(
             store, checkpointer
         )
 
         # set data
         app.state.supervisor_agent = supervisor_agent
         app.state.confirm_tools = confirm_tools
+        app.state.agent_names = agent_names
         app.state.store = store
         app.state.checkpointer = checkpointer
         app.state.ready = True

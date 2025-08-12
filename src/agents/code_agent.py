@@ -33,7 +33,7 @@ Respond only with code or explanations—**do not call tools**.
 
 
 @alru_cache()
-async def get_code_agent() -> CompiledStateGraph:
+async def get_code_agent() -> tuple[str, CompiledStateGraph]:
     model = ChatOllama(
         base_url=str(get_settings().ollama_base_url),
         model=get_settings().code_agent_model,
@@ -47,4 +47,4 @@ async def get_code_agent() -> CompiledStateGraph:
         name=CODE_AGENT_NAME,
     )
 
-    return agent
+    return "Code Agent", agent

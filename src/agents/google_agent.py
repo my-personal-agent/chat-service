@@ -90,7 +90,7 @@ mcp_client = MultiServerMCPClient(mcp_config)  # type: ignore
 
 
 @alru_cache()
-async def get_google_agent() -> tuple[CompiledStateGraph, list[str]]:
+async def get_google_agent() -> tuple[str, CompiledStateGraph, list[str]]:
     tools = await mcp_client.get_tools()
 
     model = ChatOllama(
@@ -107,4 +107,4 @@ async def get_google_agent() -> tuple[CompiledStateGraph, list[str]]:
         interrupt_before=["tools"],
     )
 
-    return agent, ["send_gmail"]
+    return "Google Agent", agent, ["send_gmail"]

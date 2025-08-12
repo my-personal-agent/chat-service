@@ -14,5 +14,9 @@ app = create_app()
 
 if __name__ == "__main__":
     uvicorn.run(
-        "main:app", host=get_settings().host, port=get_settings().port, lifespan="on"
+        "main:app",
+        host=get_settings().host,
+        port=get_settings().port,
+        lifespan="on",
+        reload=get_settings().env == "local",
     )
